@@ -1,6 +1,6 @@
 # DRO: Doppler-Aware Direct Radar Odometry
 
-This repository contains the code associated with our RSS 2025 paper __"DRO: Doppler-Aware Direct Radar Odometry"__ accessible [here](link).
+This repository contains the code associated with our RSS 2025 paper __"DRO: Doppler-Aware Direct Radar Odometry"__ accessible [here](https://arxiv.org/abs/2504.20339).
 
 Authors: Cedric Le Gentil, Leonardo Brizi, Daniil Lisus, Xinyuan Qiao, Giorgio Grisetti, Timothy D. Barfoot.
 
