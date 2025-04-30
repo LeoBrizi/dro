@@ -73,7 +73,7 @@ __WARNING:__ This code might yield slightly different results than in the RSS pa
 If you find this code useful, please consider citing our paper:
 
 ```bibtex
-@inproceedings{legenti2025dro,
+@inproceedings{legentil2025dro,
   title={DRO: Doppler-Aware Direct Radar Odometry},
   author={Le Gentil, Cedric and Brizi, Leonardo and Lisus, Daniil and Qiao, Xinyuan and Grisetti, Giorgio and Barfoot, Timothy D.},
   booktitle={Robotics: Science and Systems},
