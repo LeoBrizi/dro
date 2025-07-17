@@ -13,4 +13,5 @@ struct RadarFrame {
 namespace utils {
     torch::Tensor dopplerUpDown(const RadarFrame& rf);
     bool checkChirp(const RadarFrame& rf);
+    torch::Tensor applyGaussianBlur2D(const torch::Tensor& input, int kx, int ky, double sx, double sy);
 }

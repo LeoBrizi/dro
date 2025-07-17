@@ -922,11 +922,6 @@ class GPStateEstimator:
             text_color = (0, 0, 0)
             vel_color = (255, 0, 0)
         
-
-
-
-
-
         # Convert to cartesian for display
         radar_cartesian = pb.utils.radar.radar_polar_to_cartesian(radar_frame.azimuths.astype(np.float32), polar_img, radar_frame.resolution, img_res, img_size, False, True)
         if inverted:

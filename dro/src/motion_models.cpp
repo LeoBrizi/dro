@@ -2,25 +2,28 @@
 
 #include "motion_models.h"
 
-void MotionModel::setTime(const torch::Tensor& time, const torch::Tensor& t0) 
+void MotionModel::setTime(const torch::Tensor& time, const double& t0) 
 {
     time_ = (time - t0).to(torch::kFloat32) * 1.0e-6;
     t0_ = t0;
     num_steps_ = torch::tensor(time.size(0), device_);
 }
 
-torch::Tensor MotionModel::getLocalTime(const torch::Tensor& time) const 
+double MotionModel::getLocalTime(const double& time) const 
 {
-    return (time - t0_).to(torch::kFloat32) * 1.0e-6;
+    return (time - t0_) * 1.0e-6;
 }
 
 torch::Tensor MotionModel::getInitialState() const 
 {
-    return torch::zeros(state_size_.item<int64_t>(), device_);
+    return torch::zeros(state_size_, device_);
 }
 
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
+        OptionalTensor, 
+        OptionalTensor, 
+        OptionalTensor> 
 ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac) 
 {
     // rotation = omega * dt
@@ -32,8 +35,8 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
 
     auto c = torch::cos(rot);
     auto s = torch::sin(rot);
-    auto vx = vel.index({"...", 0})
-    auto vy = vel.index({"...", 1})
+    auto vx = vel.index({"...", 0});
+    auto vy = vel.index({"...", 1});
 
     auto vx_c = vx * c;
     auto vy_s = vy * s;
@@ -65,7 +68,7 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
 }
 
 std::tuple<torch::Tensor, torch::Tensor> 
-ConstVelConstW::getPosRotSingle(const torch::Tensor& state, const torch::Tensor& time) 
+ConstVelConstW::getPosRotSingle(const torch::Tensor& state, const double& time) 
 {
     auto local_time = getLocalTime(time);
     auto rot = state[2] * local_time;
@@ -103,14 +106,14 @@ void ConstBodyVelGyro::setGyroBias(const torch::Tensor& gyro_bias)
     offset_ = torch::cat({offset_, offset_[-1].unsqueeze(0)}, 0);
 }
 
-void ConstBodyVelGyro::setTime(const torch::Tensor& time, const torch::Tensor& t0) 
+void ConstBodyVelGyro::setTime(const torch::Tensor& time, const double& t0) 
 {
     if (!initialised_) throw std::runtime_error("Gyro data not set");
 
     MotionModel::setTime(time, t0);
 
     auto time_local = time.to(torch::kFloat64) * 1e-6 - first_gyro_time_;
-    auto time_start = t0.to(torch::kFloat64) * 1e-6 - first_gyro_time_;
+    auto time_start = t0 * 1e-6 - first_gyro_time_;
     auto start_idx = torch::searchsorted(gyro_time_, time_start);
     auto end_idx = torch::searchsorted(gyro_time_, time_local);
 
@@ -175,10 +178,10 @@ ConstBodyVelGyro::getVelPosRot(const torch::Tensor& state, bool with_jac)
     return {body_vel, pos, rot, d_vel_body_d_state, d_pos_d_state, d_rot_d_state};
 }
 
-std::tuple<torch::Tensor, torch::Tensor> ConstBodyVelGyro::getPosRotSingle(const torch::Tensor& state, const torch::Tensor& time) {
-    auto times = torch::arange(t0_.item<int64_t>(), time.item<int64_t>(), 625, torch::kInt64).to(device_);
-    if (times[-1].item<int64_t>() != time.item<int64_t>()) {
-        times = torch::cat({times, time.unsqueeze(0)}, 0);
+std::tuple<torch::Tensor, torch::Tensor> ConstBodyVelGyro::getPosRotSingle(const torch::Tensor& state, const double& time) {
+    auto times = torch::arange(t0_, time, 625, torch::kInt64).to(device_);
+    if (times[-1].item<int64_t>() != time) {
+        times = torch::cat({times, torch::tensor(time, torch::kInt64).unsqueeze(0)}, 0);
     }
     setTime(times, t0_);
 

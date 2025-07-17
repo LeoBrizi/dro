@@ -2,20 +2,20 @@
 
 #include <torch/torch.h>
 #include <memory>
-#include <optional
+#include <optional>
 #include <stdexcept>
 
 using OptionalTensor = std::optional<torch::Tensor>;
 
 class MotionModel {
 public:
-    MotionModel(int64_t state_size, torch::Device device = torch::kCPU)
-        : state_size_(torch::tensor(state_size, device)), device_(device) {}
+    MotionModel(int state_size, torch::Device device = torch::kCPU)
+        : state_size_(state_size), device_(device) {}
 
     virtual ~MotionModel() = default;
 
-    virtual void setTime(const torch::Tensor& time, const torch::Tensor& t0);
-    virtual torch::Tensor getLocalTime(const torch::Tensor& time) const;
+    virtual void setTime(const torch::Tensor& time, const double& t0);
+    virtual double getLocalTime(const double& time) const;
     virtual torch::Tensor getInitialState() const;
 
     virtual std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
@@ -25,13 +25,20 @@ public:
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) = 0;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(
-        const torch::Tensor& state, const torch::Tensor& time) = 0;
+        const torch::Tensor& state, const double& time) = 0;
+
+    torch::Tensor getTime() const {
+        return time_;
+    }
+    int getStateSize() const {
+        return state_size_;
+    }
 
 protected:
-    torch::Tensor state_size_;
+    int state_size_;
     torch::Device device_;
     torch::Tensor time_;
-    torch::Tensor t0_;
+    double t0_;
     torch::Tensor num_steps_;
 };
 
@@ -49,7 +56,7 @@ public:
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) override;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(
-        const torch::Tensor& state, const torch::Tensor& time) override;
+        const torch::Tensor& state, const double& time) override;
 
 private:
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor,
@@ -60,12 +67,12 @@ private:
 // ConstBodyVelGyro model
 class ConstBodyVelGyro : public MotionModel {
 public:
-    ConstBodyVelGyro(torch::Device device = torch::kCPU);
+    ConstBodyVelGyro(torch::Device device = torch::kCPU)
         : MotionModel(2, device), initialised_(false) {}
 
     void setGyroData(const torch::Tensor& gyro_time, const torch::Tensor& gyro_yaw);
     void setGyroBias(const torch::Tensor& gyro_bias);
-    void setTime(const torch::Tensor& time, const torch::Tensor& t0) override;
+    void setTime(const torch::Tensor& time, const double& t0) override;
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
         OptionalTensor, 
@@ -74,7 +81,7 @@ public:
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) override;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(
-        const torch::Tensor& state, const torch::Tensor& time) override;
+        const torch::Tensor& state, const double& time) override;
 
 private:
     bool initialised_;
@@ -87,7 +94,7 @@ private:
 // ConstVel model
 class ConstVel : public MotionModel {
 public:
-    ConstVel(torch::Device device = torch::kCPU);
+    ConstVel(torch::Device device = torch::kCPU)
         : MotionModel(2, device) {}
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
@@ -97,5 +104,5 @@ public:
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) override;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(
-        const torch::Tensor& state, const torch::Tensor& time) override;
+        const torch::Tensor& state, const double& time) override;
 };

@@ -4,7 +4,7 @@ add_library(libdro STATIC
   utils.cpp
 )
 
-target_link_libraries(odometry PUBLIC
+target_link_libraries(libdro PUBLIC
   ${TORCH_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )

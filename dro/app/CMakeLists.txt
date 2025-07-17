@@ -20,9 +20,9 @@ if(NOT DEFINED yaml-cpp_FOUND)
   message(CHECK_PASS "fetched")
 endif()
 
-add_executable(radar_gp_state_estimation radar_gp_state_estimation.cpp)
-target_link_libraries(radar_gp_state_estimation PRIVATE
-  libdro
-  yaml-cpp
-  ${TORCH_LIBRARIES}
-)
+# add_executable(radar_gp_state_estimation radar_gp_state_estimation.cpp)
+# target_link_libraries(radar_gp_state_estimation PRIVATE
+#   libdro
+#   yaml-cpp
+#   ${TORCH_LIBRARIES}
+# )

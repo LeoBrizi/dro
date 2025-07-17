@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 
 set(Torch_DIR ${PROJECT_SOURCE_DIR}/libtorch)
+set(CMAKE_PREFIX_PATH "${Torch_DIR}/share/cmake/Torch")
+message(${Torch_DIR})
 
 find_package(Torch REQUIRED)
 
