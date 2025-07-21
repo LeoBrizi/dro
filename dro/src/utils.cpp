@@ -1,4 +1,5 @@
 #include "utils.h"
+#include <stdexcept>
 
 namespace utils {
 
@@ -64,5 +65,120 @@ torch::Tensor applyGaussianBlur2D(const torch::Tensor& input, int kx, int ky, do
     return conv->forward(input);
 }
 
+Eigen::MatrixXd utils::loadCsv(const std::string& filename,
+                               char delimiter,
+                               int skiprows) {
+    std::ifstream in(filename);
+    if (!in.is_open())
+        throw std::runtime_error("Could not open CSV file: " + filename);
+
+    std::vector<std::vector<double>> data;
+    std::string line;
+    // Skip header
+    for (int i = 0; i < skiprows && std::getline(in, line); ++i) {}
+
+    // Read data lines
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::string cell;
+        std::vector<double> row;
+        while (std::getline(ss, cell, delimiter)) {
+            row.push_back(std::stod(cell));
+        }
+        if (!data.empty() && row.size() != data[0].size())
+            throw std::runtime_error("Inconsistent column count in " + filename);
+        data.push_back(std::move(row));
+    }
+    in.close();
+
+    if (data.empty())
+        return Eigen::MatrixXd();
+
+    // Build Eigen matrix
+    size_t rows = data.size();
+    size_t cols = data[0].size();
+    Eigen::MatrixXd mat(rows, cols);
+    for (size_t i = 0; i < rows; ++i)
+        for (size_t j = 0; j < cols; ++j)
+            mat(i, j) = data[i][j];
+    return mat;
+}
+
+Eigen::Isometry3f loadIsometry3fFromFile(const std::string& filename) {
+    std::ifstream in(filename);
+    if (!in.is_open()) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+
+    Eigen::Matrix4f mat;
+    std::string line;
+    for (int row = 0; row < 4; ++row) {
+        if (!std::getline(in, line)) {
+            throw std::runtime_error("Unexpected end of file in " + filename);
+        }
+        std::istringstream ss(line);
+        for (int col = 0; col < 4; ++col) {
+            float v;
+            if (!(ss >> v)) {
+                throw std::runtime_error("Failed to parse float at row " +
+                                          std::to_string(row) + ", col " +
+                                          std::to_string(col) + " in " + filename);
+            }
+            mat(row, col) = v;
+        }
+    }
+
+    Eigen::Isometry3f iso(mat);
+    return iso;
+}
+
+RadarData loadRadarData(
+    const std::string &filename,
+    int encoder_size,
+    int min_id = 0
+) {
+    // 1) Read as 8‑bit grayscale
+    cv::Mat img = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+    if (img.empty()) {
+        throw std::runtime_error("Failed to load image: " + filename);
+    }
+
+    int H = img.rows;
+    int W = img.cols;
+    int polarW = W - 11 - min_id;
+    if (polarW <= 0) {
+        throw std::runtime_error("Image too narrow for polar data after skipping");
+    }
+
+    // 2) Allocate output tensors on CPU
+    torch::Tensor timestamps = torch::empty({H}, torch::kFloat64);
+    torch::Tensor azimuths  = torch::empty({H}, torch::kFloat32);
+    torch::Tensor polar      = torch::empty({H, polarW}, torch::kFloat32);
+
+    // 3) Fill in each row
+    for (int i = 0; i < H; ++i) {
+        const uint8_t* row = img.ptr<uint8_t>(i);
+
+        // --- timestamps: bytes 0..7 as uint64, then *1e‑3
+        uint64_t ts = 0;
+        for (int b = 0; b < 8; ++b) {
+            ts |= uint64_t(row[b]) << (8 * b);
+        }
+        timestamps[i] = static_cast<double>(ts) * 1e-3;
+
+        // --- azimuth: bytes 8..9 as uint16 a, then /encoder_size*2π
+        uint16_t enc = uint16_t(row[8]) | (uint16_t(row[9]) << 8);
+        float az = static_cast<float>(enc) / float(encoder_size) * 2.0f * float(M_PI);
+        azimuths[i] = az;
+
+        // --- polar: bytes 11+min_id ... W-1, normalized [0,1]
+        for (int j = 0; j < polarW; ++j) {
+            polar[i][j] = float(row[11 + min_id + j]) / 255.0f;
+        }
+    }
+
+    return {timestamps, azimuths, polar};
+}
 
 } // namespace utils

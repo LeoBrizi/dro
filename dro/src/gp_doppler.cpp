@@ -967,3 +967,13 @@ std::pair<OptionalTensor, OptionalTensor> GPStateEstimator::getAzPosRot() {
 
     return {pos.detach().cpu(), rot.detach().cpu()};
 }
+
+void setGyroData(const std::vector<double>& imu_time,
+                 const std::vector<double>& imu_yaw) {
+  auto options = torch::TensorOptions()
+                     .dtype(torch::kFloat64)
+                     .device(device_);
+  auto t_time = torch::tensor(imu_time, options);
+  auto t_yaw  = torch::tensor(imu_yaw,  options);
+  motion_model_->setGyroData(t_time, t_yaw);
+}

@@ -41,6 +41,8 @@ public:
 
     cv::Mat generateVisualisation(const RadarFrame& radar_frame, int img_size, double img_res, bool inverted = false, bool text = true);
     
+    void setGyroData(std::vector<double> imu_time, std::vector<double> imu_yaw);
+
 private:
     torch::Tensor solve(const torch::Tensor& state_init, int nb_iter = 20, double cost_tol = 1e-6, double step_tol = 1e-6, bool verbose = false, bool degraded = false);
     
