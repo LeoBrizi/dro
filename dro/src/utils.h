@@ -4,7 +4,10 @@
 #include <opencv2/opencv.hpp>
 #include <torch/torch.h>
 #include <Eigen/Dense>
+#include <filesystem>
 #include <string>
+namespace fs = std::filesystem;
+
 
 // Represents a single radar frame, with paths to its data
 struct RadarFrame {
@@ -16,6 +19,7 @@ struct RadarData {
     torch::Tensor timestamps;  // float64 tensor of length H
     torch::Tensor azimuths;    // float32 tensor of length H
     torch::Tensor polar;       // float32 tensor of shape (H, W')
+    double timestamp;
 };
 
 namespace utils {
@@ -28,11 +32,10 @@ namespace utils {
     Eigen::MatrixXd loadCsv(const std::string& filename,
                             char delimiter = ',',
                             int skiprows = 1);
-    Eigen::Isometry3f loadIsometry3fFromFile(const std::string& filename);
+    Eigen::Isometry3d loadIsometry3dFromFile(const std::string& filename);
 
     RadarData loadRadarData(
-        const std::string &filename,
+        const fs::path &filename,
         int encoder_size = 16000,
         int min_id = 0);
-}
 }

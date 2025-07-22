@@ -7,4 +7,5 @@ add_library(libdro STATIC
 target_link_libraries(libdro PUBLIC
   ${TORCH_LIBRARIES}
   ${OpenCV_LIBRARIES}
+  Eigen3::Eigen
 )

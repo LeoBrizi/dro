@@ -37,11 +37,25 @@ class GPStateEstimator {
 public:
     GPStateEstimator(const YAML::Node& opts, double res);
 
-    torch::Tensor odometryStep(const torch::Tensor& polar_image, const torch::Tensor& azimuths, const std::vector<double>& timestamps, bool chirp_up = true);
+    torch::Tensor odometryStep(const torch::Tensor& polar_image, const torch::Tensor& azimuths, const torch::Tensor& timestamps, bool chirp_up = true);
 
     cv::Mat generateVisualisation(const RadarFrame& radar_frame, int img_size, double img_res, bool inverted = false, bool text = true);
-    
-    void setGyroData(std::vector<double> imu_time, std::vector<double> imu_yaw);
+
+    void setGyroData(const std::vector<double>& imu_time, const std::vector<double>& imu_yaw);
+
+    void setGyroBias(const double& gyro_bias);
+
+    torch::Tensor getDopplerVelocity();
+
+    void setVyBias(const double& vy_bias) {
+        vy_bias_ = torch::tensor(vy_bias, torch::TensorOptions().dtype(torch::kFloat64).device(device_));
+    }
+
+    torch::Device getDevice() const {
+        return device_;
+    }
+
+    std::pair<OptionalTensor, OptionalTensor> getAzPosRot();
 
 private:
     torch::Tensor solve(const torch::Tensor& state_init, int nb_iter = 20, double cost_tol = 1e-6, double step_tol = 1e-6, bool verbose = false, bool degraded = false);
@@ -68,10 +82,6 @@ private:
     torch::Tensor cartToLocalMapIDSparse(const torch::Tensor& xy);
 
     void moveLocalMap(const torch::Tensor& pos, const torch::Tensor& rot);
-
-    torch::Tensor getDopplerVelocity();
-
-    std::pair<OptionalTensor, OptionalTensor> getAzPosRot();
     
     torch::Tensor seKernel(const torch::Tensor& X1, const torch::Tensor& X2, double l_az, double l_range);
 

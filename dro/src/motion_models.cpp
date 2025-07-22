@@ -70,6 +70,8 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
 std::tuple<torch::Tensor, torch::Tensor> 
 ConstVelConstW::getPosRotSingle(const torch::Tensor& state, const double& time) 
 {
+    torch::NoGradGuard no_grad;
+    
     auto local_time = getLocalTime(time);
     auto rot = state[2] * local_time;
     auto pos = torch::stack({state[0] * local_time, state[1] * local_time});
@@ -179,6 +181,8 @@ ConstBodyVelGyro::getVelPosRot(const torch::Tensor& state, bool with_jac)
 }
 
 std::tuple<torch::Tensor, torch::Tensor> ConstBodyVelGyro::getPosRotSingle(const torch::Tensor& state, const double& time) {
+    torch::NoGradGuard no_grad;
+    
     auto times = torch::arange(t0_, time, 625, torch::kInt64).to(device_);
     if (times[-1].item<int64_t>() != time) {
         times = torch::cat({times, torch::tensor(time, torch::kInt64).unsqueeze(0)}, 0);

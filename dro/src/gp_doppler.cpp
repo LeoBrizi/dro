@@ -716,7 +716,7 @@ void GPStateEstimator::moveLocalMap(const torch::Tensor& pos, const torch::Tenso
 
 }
 
-torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, const torch::Tensor& azimuths, const std::vector<double>& timestamps, bool chirp_up) 
+torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, const torch::Tensor& azimuths, const torch::Tensor& timestamps, bool chirp_up) 
 {
     torch::NoGradGuard no_grad;
     
@@ -725,15 +725,18 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
     double last_scan_time;
     if (!timestamps_.defined()) 
     {
-        last_scan_time = timestamps[0] - (timestamps.back() - timestamps[0]);
-        max_diff_vel_ = max_acc_ * (timestamps.back() - timestamps[0]) * 1e-5;
+        
+        double t_start = timestamps[0].item<double>();
+        double t_end = timestamps[timestamps.size(0) - 1].item<double>();
+        last_scan_time = t_start - (t_end - t_start);
+        max_diff_vel_ = max_acc_ * (t_end - t_start) * 1e-5;
     } 
     else 
     {
         last_scan_time = timestamps_[0].item<double>();
     }
 
-    timestamps_ = torch::tensor(timestamps, torch::TensorOptions().device(device_)).squeeze();
+    timestamps_ = timestamps.to(device_).squeeze();
     double delta_time = 0.25;
 
     if (pose_estimation_) 
@@ -968,12 +971,20 @@ std::pair<OptionalTensor, OptionalTensor> GPStateEstimator::getAzPosRot() {
     return {pos.detach().cpu(), rot.detach().cpu()};
 }
 
-void setGyroData(const std::vector<double>& imu_time,
+void GPStateEstimator::setGyroData(const std::vector<double>& imu_time,
                  const std::vector<double>& imu_yaw) {
-  auto options = torch::TensorOptions()
+    auto options = torch::TensorOptions()
                      .dtype(torch::kFloat64)
                      .device(device_);
-  auto t_time = torch::tensor(imu_time, options);
-  auto t_yaw  = torch::tensor(imu_yaw,  options);
-  motion_model_->setGyroData(t_time, t_yaw);
+    auto t_time = torch::tensor(imu_time, options);
+    auto t_yaw  = torch::tensor(imu_yaw,  options);
+    std::dynamic_pointer_cast<ConstBodyVelGyro>(motion_model_)->setGyroData(t_time, t_yaw);
+}
+
+void GPStateEstimator::setGyroBias(const double& gyro_bias) {
+    auto options = torch::TensorOptions()
+                   .dtype(torch::kFloat64)
+                   .device(device_);
+    auto t2 = torch::tensor(gyro_bias, options);
+    std::dynamic_pointer_cast<ConstBodyVelGyro>(motion_model_)->setGyroBias(t2);
 }

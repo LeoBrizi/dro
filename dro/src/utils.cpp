@@ -1,5 +1,6 @@
 #include "utils.h"
 #include <stdexcept>
+#include <fstream>
 
 namespace utils {
 
@@ -65,7 +66,7 @@ torch::Tensor applyGaussianBlur2D(const torch::Tensor& input, int kx, int ky, do
     return conv->forward(input);
 }
 
-Eigen::MatrixXd utils::loadCsv(const std::string& filename,
+Eigen::MatrixXd loadCsv(const std::string& filename,
                                char delimiter,
                                int skiprows) {
     std::ifstream in(filename);
@@ -105,13 +106,13 @@ Eigen::MatrixXd utils::loadCsv(const std::string& filename,
     return mat;
 }
 
-Eigen::Isometry3f loadIsometry3fFromFile(const std::string& filename) {
+Eigen::Isometry3d loadIsometry3dFromFile(const std::string& filename) {
     std::ifstream in(filename);
     if (!in.is_open()) {
         throw std::runtime_error("Could not open file: " + filename);
     }
 
-    Eigen::Matrix4f mat;
+    Eigen::Matrix4d mat;
     std::string line;
     for (int row = 0; row < 4; ++row) {
         if (!std::getline(in, line)) {
@@ -129,19 +130,22 @@ Eigen::Isometry3f loadIsometry3fFromFile(const std::string& filename) {
         }
     }
 
-    Eigen::Isometry3f iso(mat);
+    Eigen::Isometry3d iso(mat);
     return iso;
 }
 
 RadarData loadRadarData(
-    const std::string &filename,
+    const fs::path &filename,
     int encoder_size,
-    int min_id = 0
-) {
+    int min_id) 
+{
+    // get filename from path
+    double timestamp = std::stod(filename.stem().string());
+
     // 1) Read as 8‑bit grayscale
     cv::Mat img = cv::imread(filename, cv::IMREAD_GRAYSCALE);
     if (img.empty()) {
-        throw std::runtime_error("Failed to load image: " + filename);
+        throw std::runtime_error("Failed to load image: " + filename.string());
     }
 
     int H = img.rows;
@@ -178,7 +182,13 @@ RadarData loadRadarData(
         }
     }
 
-    return {timestamps, azimuths, polar};
+    RadarData radar_data;
+    radar_data.timestamps = timestamps;
+    radar_data.azimuths  = azimuths;
+    radar_data.polar     = polar;
+    radar_data.timestamp = timestamp;
+
+    return radar_data;
 }
 
 } // namespace utils

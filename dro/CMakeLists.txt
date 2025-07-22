@@ -13,12 +13,15 @@ find_package(Torch REQUIRED)
 
 find_package(OpenCV REQUIRED)
 
+find_package(Eigen3 REQUIRED)
+
 add_compile_options(${TORCH_CXX_FLAGS})
 
 include_directories(
     ${PROJECT_SOURCE_DIR}/src
     ${TORCH_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIRS}
 )
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/src)
