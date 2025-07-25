@@ -10,8 +10,12 @@
 
 namespace fs = std::filesystem;
 
-int main() {
-    YAML::Node config = YAML::LoadFile("config.yaml");
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <config.yaml>" << std::endl;
+        return -1;
+    }
+    YAML::Node config = YAML::LoadFile(argv[1]);
 
     // Data loading
     fs::path data_path = config["data"]["data_path"].as<std::string>();
@@ -45,23 +49,24 @@ int main() {
         std::cerr << "Ambiguous configuration: no motion model selected" << std::endl;
         return -1;
     }
+    config["estimation"]["motion_model"] = motion_model;
 
     float vy_bias_alpha = 0.01;
     float vy_bias = 0.0;
     bool estimate_vy_bias = false;
-    Eigen::Matrix3d T_axle_radar;
+    Eigen::Matrix4d T_axle_radar;
     if (doppler_radar) {
         estimate_vy_bias = config["estimation"]["estimate_doppler_vy_bias"].as<bool>();
         if (estimate_vy_bias) {
             const auto T_axle_radar_vec = config["estimation"]["T_axle_radar"].as<std::vector<std::vector<double>>>();
             std::vector<double> flat_matrix;
-            flat_matrix.reserve(9);
+            flat_matrix.reserve(16);
             for (const auto& row : T_axle_radar_vec) {
                 flat_matrix.insert(flat_matrix.end(), row.begin(), row.end());
             }
 
             // Map it into an Eigen matrix
-            T_axle_radar = Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>>(flat_matrix.data());
+            T_axle_radar = Eigen::Map<const Eigen::Matrix<double, 4, 4, Eigen::RowMajor>>(flat_matrix.data());
         }
         if (config["estimation"]["vy_bias_alpha"].IsDefined()) {
             vy_bias_alpha = config["estimation"]["vy_bias_alpha"].as<float>();
@@ -294,17 +299,17 @@ int main() {
                     gyro_data = Eigen::Vector3d::Zero();
                 } else {
                     double gyro_mean_yaw = std::accumulate(selected_gyro_yaw.begin(), selected_gyro_yaw.end(), 0.0) / selected_gyro_yaw.size();
-                    gyro_data = T_axle_radar * Eigen::Vector3d(0.0, 0.0, gyro_mean_yaw);
+                    gyro_data = T_axle_radar.block<3, 3>(0, 0) * Eigen::Vector3d(0.0, 0.0, gyro_mean_yaw);
                 }
 
                 Eigen::Vector3d translation_axle_radar = T_axle_radar.block<3, 1>(0, 3);
-                axle_vel = T_axle_radar * dv + gyro_data.cross(translation_axle_radar);
+                axle_vel = T_axle_radar.block<3, 3>(0, 0) * dv + gyro_data.cross(translation_axle_radar);
             } else {
                 axle_vel = T_axle_radar.block<3,3>(0,0) * dv;
             }
 
             Eigen::Vector3d lateral_velocity(0.0, axle_vel.y(), 0.0);
-            double vy = (T_axle_radar.transpose() * lateral_velocity).y();
+            double vy = (T_axle_radar.block<3,3>(0,0).transpose() * lateral_velocity).y();
             vy_bias = vy_bias_alpha * vy + (1.0 - vy_bias_alpha) * vy_bias;
             state_estimator.setVyBias(vy_bias);
         }

@@ -25,4 +25,5 @@ target_link_libraries(radar_gp_state_estimation PRIVATE
   libdro
   yaml-cpp
   ${TORCH_LIBRARIES}
+  ${CUDA_CUDART_LIBRARY}
 )

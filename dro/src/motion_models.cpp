@@ -209,3 +209,8 @@ ConstVel::getVelPosRot(const torch::Tensor& state, bool with_jac) {
 
     return {vel, torch::Tensor(), torch::Tensor(), d_vel_d_state, std::nullopt, std::nullopt};
 }
+
+std::tuple<torch::Tensor, torch::Tensor> ConstVel::getPosRotSingle(const torch::Tensor& state, const double& time) {
+    throw std::runtime_error("Querying single position and rotation is not sensible for constant velocity model");
+    return {torch::Tensor(), torch::Tensor()};
+}
