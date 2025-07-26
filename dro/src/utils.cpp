@@ -10,7 +10,7 @@ torch::Tensor dopplerUpDown(const RadarFrame& rf) {
     std::string base = (pos != std::string::npos)
         ? rf.sensor_root.substr(0, pos)
         : rf.sensor_root;
-    std::string doppler_path = base + "/radar/" + rf.frame + ".png";
+    std::string doppler_path = base + "/radar/" + rf.frame;
 
     cv::Mat img = cv::imread(doppler_path, cv::IMREAD_GRAYSCALE);
     if (img.empty()) {

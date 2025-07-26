@@ -91,6 +91,7 @@ GPStateEstimator::GPStateEstimator(const YAML::Node& opts, double res) :
     auto XX_interp = meshgrid[0];
     auto YY_interp = meshgrid[1];
 
+
     X_smooth_ = torch::stack({XX_smooth.flatten(), YY_smooth.flatten()}, 1);
     X_interp_ = torch::stack({XX_interp.flatten(), YY_interp.flatten()}, 1);
 
@@ -127,9 +128,12 @@ GPStateEstimator::GPStateEstimator(const YAML::Node& opts, double res) :
         int local_map_size = static_cast<int>(max_local_map_range / local_map_res_) * 2 + 1;
         local_map_ = torch::zeros({local_map_size, local_map_size}, torch::TensorOptions().device(device_));
 
-        auto temp_x = (torch::arange(-local_map_size / 2, local_map_size / 2, torch::TensorOptions().device(device_)) + 1) * local_map_res_;
+        // auto temp_x = (torch::arange(-local_map_size / 2, local_map_size / 2, torch::TensorOptions().device(device_)) + 1) * local_map_res_;
+
+        auto temp_x = (torch::arange(-local_map_size/2, local_map_size/2+1, 1).to(device_) + 1) * local_map_res_;
         auto X = -temp_x.unsqueeze(0).transpose(0, 1).repeat({1, local_map_size});
         auto Y = temp_x.unsqueeze(0).repeat({local_map_size, 1});
+
         local_map_xy_ = torch::stack({X, Y}, 2).unsqueeze(-1);
         local_map_zero_idx_ = static_cast<int>(max_local_map_range / local_map_res_);
         local_map_polar_ = localMapToPolarCoord();
@@ -219,8 +223,10 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::getUpDownPolarImages(c
     out_odd.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(1, torch::indexing::None, 2), torch::indexing::Slice()}, odd_smooth_torch);
     out_odd.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), -1, torch::indexing::Slice()}, torch::zeros_like(out_odd.index({torch::indexing::Slice(), torch::indexing::Slice(), -1, torch::indexing::Slice()})));
 
-    auto even_std = torch::std(out_even, 3, true);
-    auto odd_std = torch::std(out_odd, 3, true);
+    auto even_std = torch::std(out_even, 3, false, true);
+    auto odd_std = torch::std(out_odd, 3, false, true);
+    std::cerr << "out_even_size: " << out_even.sizes() << ", out_odd_size: " << out_odd.sizes() << std::endl;
+    std::cerr << "even_std: " << even_std.sizes() << ", odd_std: " << odd_std.sizes() << std::endl;
     out_even = out_even - 2.0 * even_std;
     out_odd = out_odd - 2.0 * odd_std;
 

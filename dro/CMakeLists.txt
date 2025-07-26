@@ -8,7 +8,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -DTORCH_USE_CUDA_DSA -g")
 # set(CUDAToolkit_ROOT "${CMAKE_SOURCE_DIR}/local/cuda-12.9")
 # set(CUDA_TOOLKIT_ROOT_DIR "${CMAKE_SOURCE_DIR}/local/cuda-12.9")
 # set(CUDA_BIN_PATH "${CMAKE_SOURCE_DIR}/local/cuda-12.9/bin")
-set(CMAKE_CUDA_ARCHITECTURES 61)
+set(CMAKE_CUDA_ARCHITECTURES 89)
 find_library(CUDA_CUDART_LIBRARY
     NAMES libcudart.so libcudart
     PATH_SUFFIXES lib
@@ -31,7 +31,7 @@ message(STATUS "Found CUDA CUDART library: ${CUDA_CUDART_LIBRARY}")
 # )
 
 # add_library(CUDA::nvToolsExt UNKNOWN IMPORTED)
-# set_target_properties(CUDA::nvToolsExt PROPERTIES
+# set_target_properties(CUDA::nvToolsExt PROPERTIESs
 #     IMPORTED_LOCATION "${NVTOOLSEXT_LIBRARY}"
 #     INTERFACE_INCLUDE_DIRECTORIES "/usr/include"
 # )
