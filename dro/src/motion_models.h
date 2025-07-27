@@ -18,10 +18,7 @@ public:
     virtual double getLocalTime(const double& time) const;
     virtual torch::Tensor getInitialState() const;
 
-    virtual std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
-        OptionalTensor, 
-        OptionalTensor, 
-        OptionalTensor> 
+    virtual std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor> 
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) = 0;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(
@@ -49,19 +46,11 @@ public:
     ConstVelConstW(torch::Device device = torch::kCPU)
         : MotionModel(3, device) {}
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
-        OptionalTensor, 
-        OptionalTensor, 
-        OptionalTensor> 
+    std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor> 
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) override;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(
         const torch::Tensor& state, const double& time) override;
-
-private:
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor,
-               torch::Tensor, torch::Tensor, torch::Tensor>
-    getVelPosRotWithJacobian(const torch::Tensor& state);
 };
 
 // ConstBodyVelGyro model
@@ -74,10 +63,7 @@ public:
     void setGyroBias(const torch::Tensor& gyro_bias);
     void setTime(const torch::Tensor& time, const double& t0) override;
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
-        OptionalTensor, 
-        OptionalTensor, 
-        OptionalTensor> 
+    std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor>
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) override;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(
@@ -97,10 +83,7 @@ public:
     ConstVel(torch::Device device = torch::kCPU)
         : MotionModel(2, device) {}
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
-        OptionalTensor, 
-        OptionalTensor, 
-        OptionalTensor> 
+    std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor> 
         getVelPosRot(const torch::Tensor& state, bool with_jac = false) override;
 
     virtual std::tuple<torch::Tensor, torch::Tensor> getPosRotSingle(

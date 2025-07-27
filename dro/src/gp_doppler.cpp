@@ -350,13 +350,10 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
     torch::NoGradGuard no_grad;
 
     int state_size = state.size(0);
-    auto [velocities, d_vel_d_state, pos, d_pos_d_state_opt, rot_opt, d_rot_d_state_opt] = motion_model_->getVelPosRot(state, true);
-
-    if(!d_pos_d_state_opt.has_value() || !rot_opt.has_value() || !d_rot_d_state_opt.has_value())
-        throw std::runtime_error("Motion model must return position, rotation and their derivatives for cost computation");
+    auto [velocities, d_vel_d_state_opt, pos, d_pos_d_state_opt, rot, d_rot_d_state_opt] = motion_model_->getVelPosRot(state, true);
     
+    auto d_vel_d_state = d_vel_d_state_opt.value();
     auto d_pos_d_state = d_pos_d_state_opt.value();
-    auto rot = rot_opt.value();
     auto d_rot_d_state = d_rot_d_state_opt.value();
 
     velocities = velocities.view({-1, 1, 2});
@@ -364,6 +361,8 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
 
     velocities.index_put_({mask, 0, 1}, velocities.index({mask, 0, 1}) + vy_bias_);
     velocities.index_put_({~mask, 0, 1}, velocities.index({~mask, 0, 1}) + velocities.index({~mask, 0, 0}) * vy_bias_ / 3.0);
+
+    std::cerr << "d_vel_d_state size: " << d_vel_d_state.sizes() << std::endl;
 
     d_vel_d_state.index_put_({~mask, 1, torch::indexing::Slice()}, d_vel_d_state.index({~mask, 1, torch::indexing::Slice()}) + vy_bias_ / 3.0 * d_vel_d_state.index({~mask, 0, torch::indexing::Slice()}));
 
@@ -380,13 +379,16 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
     if (doppler) 
     {
         auto [interp_sparse, aligned_odd_coeff_sparse] = imgDopplerInterpAndJacobian(shifts);
+        std::cerr << "interp_sparse size: " << interp_sparse.sizes() << ", aligned_odd_coeff_sparse size: " << aligned_odd_coeff_sparse.sizes() << std::endl;
         residual = interp_sparse * temp_even_img_sparse_;
 
+        std::cerr << "d_shift_d_state size: " << d_shift_d_state.sizes() << ", doppler_az_ids_sparse_ size: " << doppler_az_ids_sparse_.sizes() << ", temp_even_img_sparse_ size: "<< temp_even_img_sparse_.sizes() << std::endl;
         jacobian = torch::matmul(
             aligned_odd_coeff_sparse.view({-1, 1, 1}),
             d_shift_d_state.index({doppler_az_ids_sparse_, torch::indexing::Slice(), torch::indexing::Slice()})
         ) * temp_even_img_sparse_.unsqueeze(-1).unsqueeze(-1);
-
+        
+        std::cerr << "residual size: " << residual.sizes() << ", jacobian size: " << jacobian.sizes() << std::endl;
         residual = residual.flatten();
         jacobian = jacobian.view({-1, state_size});
 
@@ -433,6 +435,8 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
             jacobian_direct = jacobian_direct * weights_direct;
         }
     }
+
+    std::cerr << "residual_direct size: " << residual_direct.sizes() << ", jacobian_direct size: " << jacobian_direct.sizes() << std::endl;
 
     if (doppler && direct) 
     {
@@ -498,11 +502,11 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> GPStateEstimator::polarT
     auto even_range = range_vec_.index({direct_r_ids_even_}) - doppler_shift.index({direct_az_ids_even_}) * shift_to_range_;
     auto odd_range = range_vec_.index({direct_r_ids_odd_}) + doppler_shift.index({direct_az_ids_odd_}) * shift_to_range_;
 
-    auto x = torch::empty({direct_nb_non_zero_.item<int>()}, torch::TensorOptions().device(device_));
+    auto x = torch::empty({direct_nb_non_zero_}, torch::TensorOptions().device(device_));
     x.index_put_({mask_direct_even_}, c_az.index({mask_direct_even_}) * even_range.index({mask_direct_even_}));
     x.index_put_({mask_direct_odd_}, c_az.index({mask_direct_odd_}) * odd_range.index({mask_direct_odd_}));
 
-    auto y = torch::empty({direct_nb_non_zero_.item<int>()}, torch::TensorOptions().device(device_));
+    auto y = torch::empty({direct_nb_non_zero_}, torch::TensorOptions().device(device_));
     y.index_put_({mask_direct_even_}, s_az.index({mask_direct_even_}) * even_range.index({mask_direct_even_}));
     y.index_put_({mask_direct_odd_}, s_az.index({mask_direct_odd_}) * odd_range.index({mask_direct_odd_}));
 
@@ -525,17 +529,17 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> GPStateEstimator::polarT
 
     auto cart = torch::stack({x_trans.unsqueeze(-1), y_trans.unsqueeze(-1)}, 1);
 
-    auto d_cart_d_rot = torch::zeros({direct_nb_non_zero_.item<int>(), 2, 1}, torch::TensorOptions().device(device_));
+    auto d_cart_d_rot = torch::zeros({direct_nb_non_zero_, 2, 1}, torch::TensorOptions().device(device_));
     d_cart_d_rot.index_put_({torch::indexing::Slice(), 0, 0}, -y_rot);
     d_cart_d_rot.index_put_({torch::indexing::Slice(), 1, 0}, x_rot);
 
-    auto d_cart_d_shift = torch::empty({nb_azimuths_.item<int>(), 2, 1}, torch::TensorOptions().device(device_));
+    auto d_cart_d_shift = torch::empty({nb_azimuths_, 2, 1}, torch::TensorOptions().device(device_));
     d_cart_d_shift.index_put_({torch::indexing::Slice(0, torch::indexing::None, 2), 0, 0}, c_az_min.index({torch::indexing::Slice(0, torch::indexing::None, 2)}) * -shift_to_range_);
     d_cart_d_shift.index_put_({torch::indexing::Slice(1, torch::indexing::None, 2), 0, 0}, c_az_min.index({torch::indexing::Slice(1, torch::indexing::None, 2)}) * shift_to_range_);
     d_cart_d_shift.index_put_({torch::indexing::Slice(0, torch::indexing::None, 2), 1, 0}, s_az_min.index({torch::indexing::Slice(0, torch::indexing::None, 2)}) * -shift_to_range_);
     d_cart_d_shift.index_put_({torch::indexing::Slice(1, torch::indexing::None, 2), 1, 0}, s_az_min.index({torch::indexing::Slice(1, torch::indexing::None, 2)}) * shift_to_range_);
 
-    auto d_trans_d_cart = torch::empty({nb_azimuths_.item<int>(), 2, 2}, torch::TensorOptions().device(device_));
+    auto d_trans_d_cart = torch::empty({nb_azimuths_, 2, 2}, torch::TensorOptions().device(device_));
     d_trans_d_cart.index_put_({torch::indexing::Slice(), 0, 0}, c_rot_min);
     d_trans_d_cart.index_put_({torch::indexing::Slice(), 0, 1}, -s_rot_min);
     d_trans_d_cart.index_put_({torch::indexing::Slice(), 1, 0}, s_rot_min);
@@ -566,7 +570,7 @@ torch::Tensor GPStateEstimator::polarCoordCorrection(const torch::Tensor& pos, c
     auto x_trans = x_rot + pos.index({torch::indexing::Slice(), 0});
     auto y_trans = y_rot + pos.index({torch::indexing::Slice(), 1});
 
-    auto polar = torch::zeros({nb_azimuths_.item<int>(), polar_coord.size(1), 2}, torch::TensorOptions().device(device_));
+    auto polar = torch::zeros({nb_azimuths_, polar_coord.size(1), 2}, torch::TensorOptions().device(device_));
     polar.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), 0}, torch::atan2(y_trans, x_trans));
     polar.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), 1}, torch::sqrt(x_trans * x_trans + y_trans * y_trans));
 
@@ -606,12 +610,13 @@ torch::Tensor GPStateEstimator::solve(const torch::Tensor& state_init, int nb_it
 
     for (int i = 0; i < nb_iter; ++i) {
         auto [res, jac] = costFunctionAndJacobian(state, use_doppler_, use_direct_ && (step_counter_ > 0), degraded);
+        std::cerr <<"size of res: " << res.sizes() << ", size of jac: " << jac.sizes() << std::endl;
 
         if (remove_angular && !use_gyro_) {
             jac = jac.index({torch::indexing::Slice(), torch::indexing::Slice(0, -1)});
         }
-
-        auto grad = 3 * torch::sum(res.flatten().unsqueeze(-1).pow(2) * jac, 0);
+        auto jac_view = jac.reshape({-1, jac.size(-1)});
+        auto grad = 3 * torch::sum(res.flatten().unsqueeze(-1).pow(2) * jac_view, 0);
         auto cost = torch::sum(res.pow(3).flatten());
 
         if (i == 0) {
@@ -751,8 +756,8 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         {
             auto result = motion_model_->getVelPosRot(state_init_, false);
             auto vel_body = std::get<0>(result);
-            auto prev_scan_pos = std::get<1>(result);
-            auto prev_scan_rot = std::get<2>(result);
+            auto prev_scan_pos = std::get<2>(result);
+            auto prev_scan_rot = std::get<4>(result);
             auto [frame_pos, frame_rot] = motion_model_->getPosRotSingle(state_init_, timestamps_[0].item<double>());
 
             auto cos_rot = torch::cos(current_rot_);
@@ -784,17 +789,19 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
 
                 auto cos_prev = torch::cos(prev_scan_rot);
                 auto sin_prev = torch::sin(prev_scan_rot);
-                auto rot_mats_transposed = torch::stack({torch::stack({cos_prev, sin_prev}, 1), torch::stack({-sin_prev, cos_prev}, 1)}, 2);
+                auto rot_mats_transposed = torch::stack({torch::stack({cos_prev, sin_prev}, 1), torch::stack({-sin_prev, cos_prev}, 1)}, 2).squeeze(-1);
 
                 prev_scan_pos = prev_scan_pos.view({-1, 2, 1});
+                std::cerr << "prev_scan_pos size: " << prev_scan_pos.sizes() << ", frame_pos size: " << frame_pos.sizes() << "rot_mats_transposed sizes: " << rot_mats_transposed.sizes() << std::endl;
                 auto pos = torch::matmul(rot_mats_transposed, (-prev_scan_pos + frame_pos.view({-1, 2, 1})));
                 auto rot = -prev_scan_rot + frame_rot;
-
+                std::cerr << "after shit"<<std::endl;
+                
                 auto polar_coord_corrected = polarCoordCorrection(pos, rot);
                 polar_coord_corrected.index_put_({Slice(), Slice(), 0}, polar_coord_corrected.index({Slice(), Slice(), 0}) - azimuths_[0]);
                 auto mask_neg = polar_coord_corrected.index({Slice(), Slice(), 0}) < 0;
                 polar_coord_corrected.index_put_({mask_neg}, polar_coord_corrected.index({mask_neg}) + torch::tensor({2 * M_PI, 0}, device_));
-                polar_coord_corrected.index_put_({Slice(), Slice(), 0}, polar_coord_corrected.index({Slice(), Slice(), 0}) * (nb_azimuths_.item<double>() / (2 * M_PI)));
+                polar_coord_corrected.index_put_({Slice(), Slice(), 0}, polar_coord_corrected.index({Slice(), Slice(), 0}) * (static_cast<double>(nb_azimuths_) / (2 * M_PI)));
                 polar_coord_corrected.index_put_({Slice(), Slice(), 1}, (polar_coord_corrected.index({Slice(), Slice(), 1}) - radar_res_ / 2.0) / radar_res_);
 
                 prev_shifted = torch::cat({prev_shifted, prev_shifted.index({0}).unsqueeze(0)}, 0);
@@ -804,7 +811,7 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
                 temp_polar.index_put_({Slice(), Slice(), 0}, temp_polar.index({Slice(), Slice(), 0}) - azimuths_[0]);
                 auto mask_temp_neg = temp_polar.index({Slice(), Slice(), 0}) < 0;
                 temp_polar.index_put_({mask_temp_neg}, temp_polar.index({mask_temp_neg}) + torch::tensor({2 * M_PI, 0}, device_));
-                temp_polar.index_put_({Slice(), Slice(), 0}, temp_polar.index({Slice(), Slice(), 0}) * (nb_azimuths_.item<double>() / (2 * M_PI)));
+                temp_polar.index_put_({Slice(), Slice(), 0}, temp_polar.index({Slice(), Slice(), 0}) * (static_cast<double>(nb_azimuths_) / (2 * M_PI)));
                 temp_polar.index_put_({Slice(), Slice(), 1}, (temp_polar.index({Slice(), Slice(), 1}) - radar_res_ / 2.0) / radar_res_);
 
                 polar_target = torch::cat({polar_target, polar_target.index({0}).unsqueeze(0)}, 0);
@@ -828,10 +835,10 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
     }
 
     azimuths_ = azimuths.to(device_).to(torch::kFloat32);
-    nb_azimuths_ = torch::tensor(azimuths.size(0), torch::TensorOptions().device(device_));
+    nb_azimuths_ = azimuths.size(0);
     motion_model_->setTime(timestamps_, timestamps_[0].item<double>());
 
-    auto dirs = torch::empty({nb_azimuths_.item<int>(), 2}, torch::TensorOptions().device(device_));
+    auto dirs = torch::empty({nb_azimuths_, 2}, torch::TensorOptions().device(device_));
     dirs.index_put_({Slice(), 0}, torch::cos(azimuths_));
     dirs.index_put_({Slice(), 1}, torch::sin(azimuths_));
     vel_to_bin_vec_ = vel_to_bin_ * dirs;
@@ -841,7 +848,7 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
 
     if (use_doppler_) {
 
-        auto pad = torch::zeros({nb_azimuths_.item<int>(), static_cast<int>(kImgPadding_)}, torch::TensorOptions().dtype(torch::kFloat32).device(device_));
+        auto pad = torch::zeros({nb_azimuths_, static_cast<int>(kImgPadding_)}, torch::TensorOptions().dtype(torch::kFloat32).device(device_));
         temp_even_img_ = torch::cat({pad, even_img, pad}, 1);
         auto temp_odd_img = torch::cat({pad, odd_img, pad}, 1);
 
@@ -853,8 +860,8 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         auto mask_doppler = temp_even_img_ != 0;
         temp_even_img_sparse_ = temp_even_img_.index({mask_doppler});
 
-        doppler_az_ids_sparse_ = torch::arange(nb_azimuths_.item<int>(), torch::TensorOptions().device(device_)).unsqueeze(1).repeat({1, temp_even_img_.size(1)}).index({mask_doppler});
-        doppler_bin_vec_sparse_ = torch::arange(nb_bins_, torch::TensorOptions().device(device_)).unsqueeze(0).repeat({nb_azimuths_.item<int>(), 1}).index({mask_doppler});
+        doppler_az_ids_sparse_ = torch::arange(nb_azimuths_, torch::TensorOptions().device(device_)).unsqueeze(1).repeat({1, temp_even_img_.size(1)}).index({mask_doppler});
+        doppler_bin_vec_sparse_ = torch::arange(nb_bins_, torch::TensorOptions().device(device_)).unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_doppler});
     }
 
     if (use_direct_) 
@@ -878,20 +885,21 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         }
 
         auto range_vec = torch::arange(max_range_idx_, torch::TensorOptions().device(device_).dtype(torch::kFloat32)) * radar_res_ + radar_res_ * 0.5;
-        polar_coord_raw_gp_infered_ = torch::zeros({nb_azimuths_.item<int>(), max_range_idx_, 2}, torch::TensorOptions().device(device_));
+        polar_coord_raw_gp_infered_ = torch::zeros({nb_azimuths_, max_range_idx_, 2}, torch::TensorOptions().device(device_));
         polar_coord_raw_gp_infered_.index_put_({Slice(), Slice(), 0}, azimuths_.unsqueeze(1).repeat({1, max_range_idx_}));
-        polar_coord_raw_gp_infered_.index_put_({Slice(), Slice(), 1}, range_vec.unsqueeze(0).repeat({nb_azimuths_.item<int>(), 1}));
+        polar_coord_raw_gp_infered_.index_put_({Slice(), Slice(), 1}, range_vec.unsqueeze(0).repeat({nb_azimuths_, 1}));
 
         auto temp_intensity = polar_intensity_.index({Slice(), Slice(None, max_range_idx_direct_)});
         auto mask_direct = temp_intensity != 0;
         mask_direct.index_put_({Slice(), Slice(None, min_range_idx_direct_)}, false);
-
+        std::cerr << "Direct mask size: " << mask_direct.size(0) << ", " << mask_direct.size(1) << std::endl;
+        std::cerr << "temp_intensity size: " << temp_intensity.size(0) << ", " << temp_intensity.size(1) << std::endl;
         polar_intensity_sparse_ = temp_intensity.index({mask_direct});
 
-        direct_r_sparse_ = range_vec.unsqueeze(0).repeat({nb_azimuths_.item<int>(), 1}).index({mask_direct});
-        direct_az_ids_sparse_ = torch::arange(nb_azimuths_.item<int>(), torch::TensorOptions().device(device_)).unsqueeze(1).repeat({1, max_range_idx_direct_}).index({mask_direct});
-        direct_r_ids_sparse_ = torch::arange(max_range_idx_direct_, torch::TensorOptions().device(device_)).unsqueeze(0).repeat({nb_azimuths_.item<int>(), 1}).index({mask_direct});
-
+        direct_r_sparse_ = range_vec_.unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_direct});
+        std::cerr << "doppler_radar_: " << doppler_radar_ << std::endl;
+        direct_az_ids_sparse_ = torch::arange(nb_azimuths_, torch::TensorOptions().device(device_)).unsqueeze(1).repeat({1, max_range_idx_direct_}).index({mask_direct});
+        direct_r_ids_sparse_ = torch::arange(max_range_idx_direct_, torch::TensorOptions().device(device_)).unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_direct});
         if (doppler_radar_) 
         {
             auto mde = torch::empty_like(mask_direct);
@@ -909,8 +917,9 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
             mask_direct_even_ = torch::ones_like(polar_intensity_sparse_, torch::TensorOptions().dtype(torch::kBool));
             mask_direct_odd_ = torch::zeros_like(polar_intensity_sparse_, torch::TensorOptions().dtype(torch::kBool));
         }
+        std::cerr << "HERE"<<std::endl;
 
-        direct_nb_non_zero_ = torch::tensor(polar_intensity_sparse_.size(0), torch::TensorOptions().device(device_));
+        direct_nb_non_zero_ = polar_intensity_sparse_.size(0);
         direct_r_ids_even_ = direct_r_ids_sparse_.index({mask_direct_even_});
         direct_r_ids_odd_ = direct_r_ids_sparse_.index({mask_direct_odd_});
         direct_r_even_ = direct_r_sparse_.index({mask_direct_even_});
@@ -968,8 +977,8 @@ std::pair<OptionalTensor, OptionalTensor> GPStateEstimator::getAzPosRot() {
     auto rot_mat = torch::stack({torch::stack({c, -s}), torch::stack({s, c})}).to(device_);
 
     auto result = motion_model_->getVelPosRot(state_init_, false);
-    torch::Tensor scan_pos = std::get<1>(result);
-    torch::Tensor scan_rot = std::get<2>(result);
+    torch::Tensor scan_pos = std::get<2>(result);
+    torch::Tensor scan_rot = std::get<4>(result);
 
     auto pos = rot_mat.matmul(scan_pos.to(torch::kFloat64)) + current_pos_.unsqueeze(1);
     auto rot = scan_rot.to(torch::kFloat64) + current_rot_;

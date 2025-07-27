@@ -114,7 +114,7 @@ private:
     torch::Tensor azimuths_;
     torch::Tensor vel_to_bin_vec_;
     torch::Tensor state_init_, current_pos_, current_rot_;
-    torch::Tensor nb_azimuths_;
+    int nb_azimuths_;
     torch::Tensor beta_smooth_torch_conv_weight_, beta_interp_torch_conv_weight_;
     torch::nn::Conv2d beta_smooth_torch_conv_ = nullptr;
     torch::nn::Conv2d beta_interp_torch_conv_ = nullptr;
@@ -123,7 +123,7 @@ private:
     torch::Tensor polar_intensity_sparse_;
     torch::Tensor direct_az_ids_sparse_, direct_r_ids_sparse_, direct_r_sparse_;
     torch::Tensor mask_direct_even_, mask_direct_odd_;
-    torch::Tensor direct_nb_non_zero_;
+    int direct_nb_non_zero_;
     torch::Tensor direct_r_ids_even_, direct_r_ids_odd_;
     torch::Tensor direct_r_even_, direct_r_odd_;
     torch::Tensor direct_az_ids_even_, direct_az_ids_odd_;

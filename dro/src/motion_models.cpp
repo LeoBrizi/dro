@@ -2,6 +2,9 @@
 
 #include "motion_models.h"
 
+using torch::indexing::Slice;
+using torch::indexing::None;
+
 void MotionModel::setTime(const torch::Tensor& time, const double& t0) 
 {
     time_ = (time - t0).to(torch::kFloat32) * 1.0e-6;
@@ -20,10 +23,7 @@ torch::Tensor MotionModel::getInitialState() const
 }
 
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, 
-        OptionalTensor, 
-        OptionalTensor, 
-        OptionalTensor> 
+std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor> 
 ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac) 
 {
     // rotation = omega * dt
@@ -35,8 +35,10 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
 
     auto c = torch::cos(rot);
     auto s = torch::sin(rot);
-    auto vx = vel.index({"...", 0});
-    auto vy = vel.index({"...", 1});
+    
+    auto vx = vel.squeeze(-1).index({Slice(), 0});
+    auto vy = vel.squeeze(-1).index({Slice(), 1});
+    
 
     auto vx_c = vx * c;
     auto vy_s = vy * s;
@@ -46,7 +48,7 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
     auto vel_body = torch::cat({vx_c + vy_s, vy_c - vx_s}, 1);
     
     if (!with_jac)
-        return {vel_body, pos, rot, std::nullopt, std::nullopt, std::nullopt};
+        return {vel_body, std::nullopt, pos, std::nullopt, rot, std::nullopt};
 
     auto d_rot_d_state = torch::zeros({num_steps_.item<int64_t>(), 1, 1}, device_);
     d_rot_d_state.index_put_({torch::indexing::Ellipsis, 0, 0}, time_);             // torch::indexing::Ellipsis should be equal to "..." check
@@ -63,7 +65,7 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
     d_vel_body_d_state.index_put_({"...", 0, 2}, (vy_c - vx_s).squeeze() * time_);
     d_vel_body_d_state.index_put_({"...", 1, 2}, (-vx_c - vy_s).squeeze() * time_);
 
-    return {vel_body, pos, rot, d_vel_body_d_state, d_pos_d_state, d_rot_d_state};
+    return {vel_body, d_vel_body_d_state, pos, d_pos_d_state, rot, d_rot_d_state};
     
 }
 
@@ -158,7 +160,7 @@ void ConstBodyVelGyro::setTime(const torch::Tensor& time, const double& t0)
     R_integral_.slice(0, 1).select(1, 1).select(1, 1) = cumulative_cos_r;
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, OptionalTensor, OptionalTensor, OptionalTensor>
+std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor>
 ConstBodyVelGyro::getVelPosRot(const torch::Tensor& state, bool with_jac) 
 {
     auto rot = r_.unsqueeze(1).clone();
@@ -166,7 +168,7 @@ ConstBodyVelGyro::getVelPosRot(const torch::Tensor& state, bool with_jac)
     auto pos = torch::matmul(R_integral_, body_vel.unsqueeze(2));
 
     if (!with_jac) {
-        return {body_vel, pos, rot, std::nullopt, std::nullopt, std::nullopt};
+        return {body_vel, std::nullopt, pos, std::nullopt, rot, std::nullopt};
     }
 
     OptionalTensor d_rot_d_state = std::nullopt;
@@ -177,7 +179,7 @@ ConstBodyVelGyro::getVelPosRot(const torch::Tensor& state, bool with_jac)
 
     OptionalTensor d_pos_d_state = R_integral_.clone();
 
-    return {body_vel, pos, rot, d_vel_body_d_state, d_pos_d_state, d_rot_d_state};
+    return {body_vel, d_vel_body_d_state, pos, d_pos_d_state, rot, d_rot_d_state};
 }
 
 std::tuple<torch::Tensor, torch::Tensor> ConstBodyVelGyro::getPosRotSingle(const torch::Tensor& state, const double& time) {
@@ -195,19 +197,19 @@ std::tuple<torch::Tensor, torch::Tensor> ConstBodyVelGyro::getPosRotSingle(const
 }
 
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, OptionalTensor, OptionalTensor, OptionalTensor>
+std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor>
 ConstVel::getVelPosRot(const torch::Tensor& state, bool with_jac) {
     auto vel = state.unsqueeze(0).clone();
 
     if (!with_jac) {
-        return {vel, torch::Tensor(), torch::Tensor(), std::nullopt, std::nullopt, std::nullopt};
+        return {vel, std::nullopt, torch::Tensor(), std::nullopt, torch::Tensor(), std::nullopt};
     }
 
     torch::Tensor d_vel_d_state = torch::zeros({1, 2, 2}, device_);
     d_vel_d_state.index_put_({"...", 0, 0}, 1);
     d_vel_d_state.index_put_({"...", 1, 1}, 1);
 
-    return {vel, torch::Tensor(), torch::Tensor(), d_vel_d_state, std::nullopt, std::nullopt};
+    return {vel, d_vel_d_state, torch::Tensor(), std::nullopt, torch::Tensor(), std::nullopt};
 }
 
 std::tuple<torch::Tensor, torch::Tensor> ConstVel::getPosRotSingle(const torch::Tensor& state, const double& time) {
