@@ -31,7 +31,7 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
     // position = [v_x * t, v_y * t]
     auto pos = torch::stack({state[0] * time_, state[1] * time_}, 1).unsqueeze(2);
     // body velocity tensor
-    auto vel = state.slice(0, 0, 2).unsqueeze(0).unsqueeze(2).clone(); //check maybe use .index({"..."})
+    auto vel = state.slice(0, 0, 2).unsqueeze(0).unsqueeze(2).clone(); //check maybe use .index({Slice()})
 
     auto c = torch::cos(rot);
     auto s = torch::sin(rot);
@@ -51,19 +51,19 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
         return {vel_body, std::nullopt, pos, std::nullopt, rot, std::nullopt};
 
     auto d_rot_d_state = torch::zeros({num_steps_.item<int64_t>(), 1, 1}, device_);
-    d_rot_d_state.index_put_({torch::indexing::Ellipsis, 0, 0}, time_);             // torch::indexing::Ellipsis should be equal to "..." check
+    d_rot_d_state.index_put_({torch::indexing::Ellipsis, 0, 0}, time_);             // torch::indexing::Ellipsis should be equal to Slice() check
 
     auto d_pos_d_state = torch::zeros({num_steps_.item<int64_t>(), 2, 3}, device_);
-    d_pos_d_state.index_put_({"...", 0, 0}, time_);
-    d_pos_d_state.index_put_({"...", 1, 1}, time_);
+    d_pos_d_state.index_put_({Slice(), 0, 0}, time_);
+    d_pos_d_state.index_put_({Slice(), 1, 1}, time_);
 
     auto d_vel_body_d_state = torch::zeros({num_steps_.item<int64_t>(), 2, 3}, device_);
-    d_vel_body_d_state.index_put_({"...", 0, 0}, c.squeeze());
-    d_vel_body_d_state.index_put_({"...", 0, 1}, s.squeeze());
-    d_vel_body_d_state.index_put_({"...", 1, 0}, -s.squeeze());
-    d_vel_body_d_state.index_put_({"...", 1, 1}, c.squeeze());
-    d_vel_body_d_state.index_put_({"...", 0, 2}, (vy_c - vx_s).squeeze() * time_);
-    d_vel_body_d_state.index_put_({"...", 1, 2}, (-vx_c - vy_s).squeeze() * time_);
+    d_vel_body_d_state.index_put_({Slice(), 0, 0}, c.squeeze());
+    d_vel_body_d_state.index_put_({Slice(), 0, 1}, s.squeeze());
+    d_vel_body_d_state.index_put_({Slice(), 1, 0}, -s.squeeze());
+    d_vel_body_d_state.index_put_({Slice(), 1, 1}, c.squeeze());
+    d_vel_body_d_state.index_put_({Slice(), 0, 2}, (vy_c - vx_s).squeeze() * time_);
+    d_vel_body_d_state.index_put_({Slice(), 1, 2}, (-vx_c - vy_s).squeeze() * time_);
 
     return {vel_body, d_vel_body_d_state, pos, d_pos_d_state, rot, d_rot_d_state};
     
@@ -174,8 +174,8 @@ ConstBodyVelGyro::getVelPosRot(const torch::Tensor& state, bool with_jac)
     OptionalTensor d_rot_d_state = std::nullopt;
 
     torch::Tensor d_vel_body_d_state = torch::zeros({1, 2, 2}, device_);
-    d_vel_body_d_state.index_put_({"...", 0, 0}, 1.0);
-    d_vel_body_d_state.index_put_({"...", 1, 1}, 1.0);
+    d_vel_body_d_state.index_put_({Slice(), 0, 0}, 1.0);
+    d_vel_body_d_state.index_put_({Slice(), 1, 1}, 1.0);
 
     OptionalTensor d_pos_d_state = R_integral_.clone();
 
@@ -206,8 +206,8 @@ ConstVel::getVelPosRot(const torch::Tensor& state, bool with_jac) {
     }
 
     torch::Tensor d_vel_d_state = torch::zeros({1, 2, 2}, device_);
-    d_vel_d_state.index_put_({"...", 0, 0}, 1);
-    d_vel_d_state.index_put_({"...", 1, 1}, 1);
+    d_vel_d_state.index_put_({Slice(), 0, 0}, 1);
+    d_vel_d_state.index_put_({Slice(), 1, 1}, 1);
 
     return {vel, d_vel_d_state, torch::Tensor(), std::nullopt, torch::Tensor(), std::nullopt};
 }

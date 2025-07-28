@@ -1,6 +1,6 @@
 data:
   multi_sequence: true  # If true, the data path contains multiple sequences like data_path/{boereas-xxxx-xx-xx-xx-xx; boreas-yyyy-yy-yy-yy-yy; ...}
-  data_path: '/home/ced/Documents/data/boreas/doppler/rss/test/'
+  data_path: '/home/leo/dataset/new_radar_doppler/boreas-2024-01-23-11-45'
   #multi_sequence: false  # If false, the path should point to a single sequence like
   #data_path: '/home/ced/Documents/data/boreas/doppler/rss/test/boreas-2020-12-01-13-26'
                         
@@ -13,6 +13,8 @@ estimation:
   max_acceleration: 10.0 # m/s^2 This is used to detect failure modes due to too many outliers. The number 6.0 comes for the max performance of a car that is 0-100 in less than 2.4s (high performance car)
   # The following parameters are used to compensate for a bias in the doppler velocity. WARNING, the code assumes that x is forward
   vy_bias_prior: 0.11
+  optimisation_first_step: 0.1
+  ang_vel_bias: 0.0006 #0.0006 for Suburbs and Highway, 0.001 for Tunnel
   estimate_doppler_vy_bias: true
   T_axle_radar: [[ 0.99938287,  0.03512667,  0.        ,  0.51      ],
                   [ 0.03512667, -0.99938287,  0.        ,  0.        ],
@@ -32,6 +34,7 @@ radar:
   beta_corr_fact: 0.944
   range_offset: -0.31
   doppler_enabled: true
+  resolution: 0.04381
 
 imu:
   min_time_bias_init: 3.0

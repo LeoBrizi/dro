@@ -34,7 +34,7 @@ radar:
   beta_corr_fact: 0.944
   range_offset: -0.31
   doppler_enabled: true
-  resolution: 0.04
+  resolution: 0.04381
 
 imu:
   min_time_bias_init: 3.0
@@ -46,8 +46,8 @@ doppler:
 
 direct:
   min_range: 4.0
-  max_range: 120.0
-  max_local_map_range: 180.0
+  max_range: 70.0
+  max_local_map_range: 150.0
   local_map_res: 0.1
   local_map_update_alpha: 0.1 # The local map is updated as (1-alpha)*prev_map + alpha*current_scan
 

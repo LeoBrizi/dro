@@ -153,9 +153,12 @@ int main(int argc, char** argv) {
     fs::path seq_output_path = fs::path("output") / seq_id;
     fs::create_directories(seq_output_path);
     fs::path odom_output_path = seq_output_path / "odometry_result" / (seq_id + ".txt");
+    fs::path odom_output_w_path = seq_output_path / "odometry_result" / (seq_id + "_in_word_frame.txt");
     fs::create_directories(odom_output_path.parent_path());
+    fs::create_directories(odom_output_w_path.parent_path());
 
     std::ofstream odom_output(odom_output_path);
+    std::ofstream odom_output_w(odom_output_w_path);
 
     // Before the frame loop:
     double time_sum = 0.0;
@@ -416,6 +419,15 @@ int main(int argc, char** argv) {
                 }
             }
             odom_output << std::endl;
+
+            odom_output_w << static_cast<int64_t>(radar_data.timestamps[mid_id].item<double>()) << " ";
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    odom_output_w << trans_mat(r, c);
+                    if (!(r == 2 && c == 3)) odom_output_w << " ";
+                }
+            }
+            odom_output_w << std::endl;
         }
 
 
@@ -430,6 +442,7 @@ int main(int argc, char** argv) {
     }
 
     odom_output.close();
+    odom_output_w.close();
 
     return 0;
 }
