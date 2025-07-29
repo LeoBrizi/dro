@@ -353,7 +353,6 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
     
     auto d_vel_d_state = d_vel_d_state_opt.value();
     auto d_pos_d_state = d_pos_d_state_opt.value();
-    auto d_rot_d_state = d_rot_d_state_opt.value();
 
     velocities = velocities.view({-1, 1, 2});
     auto mask = velocities.index({torch::indexing::Slice(), 0, 0}) > 3.0;
@@ -403,8 +402,9 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
 
         auto d_cart_sparse_d_state = torch::matmul(d_cart_d_shift_sparse, d_shift_d_state.view({-1, 1, state_size})).index({direct_az_ids_sparse_, torch::indexing::Slice(), torch::indexing::Slice()});
 
-        if (d_rot_d_state.defined()) 
+        if (d_rot_d_state_opt.has_value()) 
         {
+            auto d_rot_d_state = d_rot_d_state_opt.value();
             d_cart_sparse_d_state.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), -1},
                 d_cart_sparse_d_state.index({torch::indexing::Slice(), torch::indexing::Slice(), -1}) +
                 torch::matmul(d_cart_d_rot_sparse, d_rot_d_state.index({direct_az_ids_sparse_}).view({-1, 1, 1})).squeeze());
@@ -721,6 +721,15 @@ void GPStateEstimator::moveLocalMap(const torch::Tensor& pos, const torch::Tenso
 
 }
 
+/// Helper: convert a CPU float32 tensor [H×W] into a CV_32FC1 Mat
+static cv::Mat tensorToMat(const torch::Tensor& t) {
+    auto tt = t.contiguous();  // ensure contiguous
+    int H = tt.size(0), W = tt.size(1);
+    // wrap the data pointer (no copy) then clone to own the memory
+    cv::Mat m(H, W, CV_32FC1, const_cast<float*>(tt.data_ptr<float>()));
+    return m.clone();
+}
+
 torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, const torch::Tensor& azimuths, const torch::Tensor& timestamps, bool chirp_up) 
 {
     torch::NoGradGuard no_grad;
@@ -923,6 +932,37 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
     if (torch::norm(state_init_.index({Slice(None, 2)})).item<double>() < 0.75) {
         state_init_.zero_();
     }
+
+
+    auto polar_intensity_cpu = polar_intensity_.detach().cpu().to(torch::kFloat32);
+    auto local_map_cpu = local_map_.detach().cpu().to(torch::kFloat32);
+    auto polar_intensity_cv = tensorToMat(polar_intensity_cpu);
+    auto local_map_cv = tensorToMat(local_map_cpu);
+    // auto local_map_blurred_cv = tensorToMat(local_map_blurred_cpu);
+    cv::resize(polar_intensity_cv, polar_intensity_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
+    cv::resize(local_map_cv, local_map_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
+    
+    cv::namedWindow("polar_intensity_cv", cv::WINDOW_AUTOSIZE);
+    cv::imshow("polar_intensity_cv", polar_intensity_cv);
+    cv::namedWindow("local_map_cv", cv::WINDOW_AUTOSIZE);
+    cv::imshow("local_map_cv", local_map_cv);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+    if (step_counter_ > 0) {
+        auto local_map_blurred_cpu = local_map_blurred_.detach().cpu().to(torch::kFloat32);
+        auto local_map_blurred_cv = tensorToMat(local_map_blurred_cpu);
+        cv::resize(local_map_blurred_cv, local_map_blurred_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
+        cv::namedWindow("local_map_blurred_cv", cv::WINDOW_AUTOSIZE);
+        cv::imshow("local_map_blurred_cv", local_map_blurred_cv);
+        cv::waitKey(0);
+        cv::destroyWindow("local_map_blurred_cv");
+    }
+    // cv::namedWindow("local_map_blurred_cv", cv::WINDOW_AUTOSIZE);
+    // cv::imshow("local_map_blurred_cv", local_map_blurred_cv);
+    // cv::waitKey(0);
+    // cv::destroyWindow("local_map_blurred_cv");
+        
+
 
     auto result = solve(state_init_, 250, 1e-6, 1e-5);
 

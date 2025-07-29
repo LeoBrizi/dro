@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
     bool visualise = config["log"]["display"].as<bool>();
     bool save_images = config["log"]["save_images"].as<bool>();
     bool verbose = config["log"]["verbose"].as<bool>();
+    int start_idx = config["estimation"]["start_idx"].as<int>();
 
     bool use_gyro = config["estimation"]["use_gyro"].as<bool>();
     bool doppler_radar = config["radar"]["doppler_enabled"].as<bool>();
@@ -101,8 +102,9 @@ int main(int argc, char** argv) {
             gyro_raw.col(1) = imu_data.col(2);
             gyro_raw.col(2) = imu_data.col(1);
             // Transform to radar frame
-            auto T_applanix_lidar = utils::loadIsometry3dFromFile(data_path / "applanix" / "T_applanix_lidar.txt");
-            auto T_radar_lidar = utils::loadIsometry3dFromFile(data_path / "radar" / "T_radar_lidar.txt");
+            fs::path calib_path = data_path / "calib";
+            auto T_applanix_lidar = utils::loadIsometry3dFromFile(calib_path / "T_applanix_lidar.txt");
+            auto T_radar_lidar = utils::loadIsometry3dFromFile(calib_path / "T_radar_lidar.txt");
             auto T_applanix_radar = T_applanix_lidar * T_radar_lidar.inverse();
             auto imu_gyro = (gyro_raw * T_applanix_radar.linear());
             imu_yaw.resize(imu_gyro.rows());
@@ -189,7 +191,7 @@ int main(int argc, char** argv) {
 
     int end_id = static_cast<int>(radar_frames.size());
 
-    for (int i = 0; i < end_id; ++i) {
+    for (int i = start_idx; i < end_id; ++i) {
         auto t_loop_start = std::chrono::steady_clock::now();
 
         RadarFrame radar_frame;

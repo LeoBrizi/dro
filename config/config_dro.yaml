@@ -5,9 +5,11 @@ data:
   #data_path: '/home/ced/Documents/data/boreas/doppler/rss/test/boreas-2020-12-01-13-26'
 
 estimation:
+  start_idx: 10 # Start index for the sequence, useful for debugging
   doppler_cost: true
   direct_cost: true
-  use_gyro: false
+  use_gyro: true
+  estimate_gyro_bias: true
   max_acceleration: 10.0 # m/s^2 This is used to detect failure modes due to too many outliers. The number 6.0 comes for the max performance of a car that is 0-100 in less than 2.4s (high performance car)
   # The following parameters are used to compensate for a bias in the doppler velocity. WARNING, the code assumes that x is forward
   vy_bias_prior: 0.11
@@ -35,10 +37,11 @@ radar:
   range_offset: -0.31
   doppler_enabled: true
   resolution: 0.04381
+  chirp_up: true
 
 imu:
   min_time_bias_init: 3.0
-  type: "dmu"
+  type: "applanix"
 
 doppler:
   min_range: 4.0

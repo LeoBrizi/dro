@@ -56,6 +56,10 @@ torch::Tensor getGaussianKernel2D(int ksize_x, int ksize_y, double sigma_x, doub
 
 torch::Tensor applyGaussianBlur2D(const torch::Tensor& input, int kx, int ky, double sx, double sy) 
 {
+    torch::NoGradGuard no_grad;
+    if (kx % 2 == 0 || ky % 2 == 0) {
+        throw std::invalid_argument("Kernel size must be odd");
+    }
     auto kernel = getGaussianKernel2D(kx, ky, sx, sy, input.device());
     kernel = kernel.view({1, 1, ky, kx});  // Conv2d expects [out_channels, in_channels, H, W]
 
@@ -169,7 +173,7 @@ RadarData loadRadarData(
         for (int b = 0; b < 8; ++b) {
             ts |= uint64_t(row[b]) << (8 * b);
         }
-        timestamps[i] = static_cast<double>(ts) * 1e-3;
+        timestamps[i] = static_cast<double>(ts);
 
         // --- azimuth: bytes 8..9 as uint16 a, then /encoder_size*2π
         uint16_t enc = uint16_t(row[8]) | (uint16_t(row[9]) << 8);
