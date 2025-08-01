@@ -19,7 +19,7 @@ double MotionModel::getLocalTime(const double& time) const
 
 torch::Tensor MotionModel::getInitialState() const 
 {
-    return torch::zeros(state_size_, device_);
+    return torch::zeros(state_size_, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
 }
 
 
@@ -50,14 +50,14 @@ ConstVelConstW::getVelPosRot(const torch::Tensor& state, bool with_jac)
     if (!with_jac)
         return {vel_body, std::nullopt, pos, std::nullopt, rot, std::nullopt};
 
-    auto d_rot_d_state = torch::zeros({num_steps_.item<int64_t>(), 1, 1}, device_);
+    auto d_rot_d_state = torch::zeros({num_steps_.item<int64_t>(), 1, 1}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     d_rot_d_state.index_put_({torch::indexing::Ellipsis, 0, 0}, time_);             // torch::indexing::Ellipsis should be equal to Slice() check
 
-    auto d_pos_d_state = torch::zeros({num_steps_.item<int64_t>(), 2, 3}, device_);
+    auto d_pos_d_state = torch::zeros({num_steps_.item<int64_t>(), 2, 3}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     d_pos_d_state.index_put_({Slice(), 0, 0}, time_);
     d_pos_d_state.index_put_({Slice(), 1, 1}, time_);
 
-    auto d_vel_body_d_state = torch::zeros({num_steps_.item<int64_t>(), 2, 3}, device_);
+    auto d_vel_body_d_state = torch::zeros({num_steps_.item<int64_t>(), 2, 3}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     d_vel_body_d_state.index_put_({Slice(), 0, 0}, c.squeeze());
     d_vel_body_d_state.index_put_({Slice(), 0, 1}, s.squeeze());
     d_vel_body_d_state.index_put_({Slice(), 1, 0}, -s.squeeze());
@@ -125,10 +125,10 @@ void ConstBodyVelGyro::setTime(const torch::Tensor& time, const double& t0)
 
     
     auto mask = start_idx == end_idx;
-    r_ = torch::zeros_like(time, torch::kFloat32);
+    r_ = torch::zeros_like(time, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     r_.index_put_({mask}, ((time_local.index({mask}) * coeff_.index({start_idx - 1}) + offset_.index({start_idx - 1}) +
                     time_start * coeff_.index({start_idx - 1}) + offset_.index({start_idx - 1})) *
-                    0.5 * (time_local.index({mask}) - time_start)).to(torch::kFloat32));
+                    0.5 * (time_local.index({mask}) - time_start)).to(torch::kFloat64));
                     
     auto first_bucket = (coeff_.index({start_idx - 1}) * time_start + offset_.index({start_idx - 1}) + gyro_yaw_.index({start_idx})) *
                         0.5 * (gyro_time_.index({start_idx}) - time_start);
@@ -137,12 +137,12 @@ void ConstBodyVelGyro::setTime(const torch::Tensor& time, const double& t0)
                        0.5 * (time_local - gyro_time_.index({end_idx - 1}));
 
     auto mask_one = start_idx + 1 == end_idx;
-    r_.index_put_({mask_one}, (first_bucket + last_bucket.index({mask_one})).to(torch::kFloat32));
+    r_.index_put_({mask_one}, (first_bucket + last_bucket.index({mask_one})).to(torch::kFloat64));
 
     auto mask_rest = start_idx + 1 < end_idx;
     if (mask_rest.any().item<bool>()) {
         auto cumulative_integral = torch::cumsum(bin_integral_.slice(0, start_idx.item<int>(), end_idx.max().item<int>()), 0);
-        r_.index_put_({mask_rest}, (first_bucket + cumulative_integral.index({end_idx.index({mask_rest}) - 2 - start_idx}) + last_bucket.index({mask_rest})).to(torch::kFloat32));
+        r_.index_put_({mask_rest}, (first_bucket + cumulative_integral.index({end_idx.index({mask_rest}) - 2 - start_idx}) + last_bucket.index({mask_rest})).to(torch::kFloat64));
     }
 
     cos_r_ = torch::cos(r_);
@@ -152,7 +152,7 @@ void ConstBodyVelGyro::setTime(const torch::Tensor& time, const double& t0)
     auto cumulative_cos_r = torch::cumsum((cos_r_.slice(0, 0, -1) + cos_r_.slice(0, 1)) * 0.5 * delta_time, 0);
     auto cumulative_sin_r = torch::cumsum((sin_r_.slice(0, 0, -1) + sin_r_.slice(0, 1)) * 0.5 * delta_time, 0);
 
-    R_integral_ = torch::zeros({time.size(0), 2, 2}, device_);
+    R_integral_ = torch::zeros({time.size(0), 2, 2}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     R_integral_[0] = 0;
     R_integral_.slice(0, 1).select(1, 0).select(1, 0) = cumulative_cos_r;
     R_integral_.slice(0, 1).select(1, 0).select(1, 1) = -cumulative_sin_r;
@@ -173,7 +173,7 @@ ConstBodyVelGyro::getVelPosRot(const torch::Tensor& state, bool with_jac)
 
     OptionalTensor d_rot_d_state = std::nullopt;
 
-    torch::Tensor d_vel_body_d_state = torch::zeros({1, 2, 2}, device_);
+    torch::Tensor d_vel_body_d_state = torch::zeros({1, 2, 2}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     d_vel_body_d_state.index_put_({Slice(), 0, 0}, 1.0);
     d_vel_body_d_state.index_put_({Slice(), 1, 1}, 1.0);
 

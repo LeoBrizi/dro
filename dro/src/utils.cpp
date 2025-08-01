@@ -42,8 +42,8 @@ torch::Tensor getGaussianKernel2D(int ksize_x, int ksize_y, double sigma_x, doub
     int half_x = ksize_x / 2;
     int half_y = ksize_y / 2;
 
-    auto x = torch::arange(-half_x, half_x + 1, torch::TensorOptions().dtype(torch::kFloat32).device(device));
-    auto y = torch::arange(-half_y, half_y + 1, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+    auto x = torch::arange(-half_x, half_x + 1, torch::TensorOptions().dtype(torch::kFloat64).device(device));
+    auto y = torch::arange(-half_y, half_y + 1, torch::TensorOptions().dtype(torch::kFloat64).device(device));
 
     auto xx = x.pow(2).div(2 * sigma_x * sigma_x).unsqueeze(1);  // shape (kx, 1)
     auto yy = y.pow(2).div(2 * sigma_y * sigma_y).unsqueeze(0);  // shape (1, ky)
@@ -66,7 +66,6 @@ torch::Tensor applyGaussianBlur2D(const torch::Tensor& input, int kx, int ky, do
     auto conv = torch::nn::Conv2d(torch::nn::Conv2dOptions(1, 1, {ky, kx}).padding({ky / 2, kx / 2}).bias(false));
     conv->weight.set_data(kernel.clone());  // clone to detach from computation graph
     conv->to(input.device());
-
     return conv->forward(input);
 }
 
@@ -144,7 +143,7 @@ RadarData loadRadarData(
     int min_id) 
 {
     // get filename from path
-    double timestamp = std::stod(filename.stem().string());
+    double timestamp = std::stod(filename.stem().string()) * 1.0e-6;
 
     // 1) Read as 8‑bit grayscale
     cv::Mat img = cv::imread(filename, cv::IMREAD_GRAYSCALE);
@@ -161,29 +160,32 @@ RadarData loadRadarData(
 
     // 2) Allocate output tensors on CPU
     torch::Tensor timestamps = torch::empty({H}, torch::kFloat64);
-    torch::Tensor azimuths  = torch::empty({H}, torch::kFloat32);
-    torch::Tensor polar      = torch::empty({H, polarW}, torch::kFloat32);
+    torch::Tensor azimuths  = torch::empty({H}, torch::kFloat64);
+    torch::Tensor polar      = torch::empty({H, polarW}, torch::kFloat64);
 
     // 3) Fill in each row
     for (int i = 0; i < H; ++i) {
         const uint8_t* row = img.ptr<uint8_t>(i);
 
-        // --- timestamps: bytes 0..7 as uint64, then *1e‑3
-        uint64_t ts = 0;
-        for (int b = 0; b < 8; ++b) {
-            ts |= uint64_t(row[b]) << (8 * b);
-        }
-        timestamps[i] = static_cast<double>(ts);
+        // // --- timestamps: bytes 0..7 as uint64, then *1e‑3
+        // uint64_t ts = 0;
+        // for (int b = 0; b < 8; ++b) {
+        //     ts |= uint64_t(row[b]) << (8 * b);
+        // }
+        // timestamps[i] = static_cast<double>(ts);
+        timestamps[i] = *((int64_t *)(row));
+        azimuths[i] = *((uint16_t *)(row + 8)) * 2.0f * float(M_PI) / double(encoder_size);
 
-        // --- azimuth: bytes 8..9 as uint16 a, then /encoder_size*2π
-        uint16_t enc = uint16_t(row[8]) | (uint16_t(row[9]) << 8);
-        float az = static_cast<float>(enc) / float(encoder_size) * 2.0f * float(M_PI);
-        azimuths[i] = az;
+        // // --- azimuth: bytes 8..9 as uint16 a, then /encoder_size
+        // uint16_t enc = uint16_t(row[8]) | (uint16_t(row[9]) << 8);
+        // float az = static_cast<float>(enc) * 2.0f * float(M_PI) / float(encoder_size);
+        // azimuths[i] = az;
 
         // --- polar: bytes 11+min_id ... W-1, normalized [0,1]
         for (int j = 0; j < polarW; ++j) {
-            polar[i][j] = float(row[11 + min_id + j]) / 255.0f;
+            polar[i][j] = float(row[11 + min_id + j]) / 255.0f; 
         }
+
     }
 
     RadarData radar_data;

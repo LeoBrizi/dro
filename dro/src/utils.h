@@ -36,6 +36,6 @@ namespace utils {
 
     RadarData loadRadarData(
         const fs::path &filename,
-        int encoder_size = 16000,
+        int encoder_size = 5600,
         int min_id = 0);
 }

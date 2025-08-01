@@ -5,7 +5,7 @@ data:
   #data_path: '/home/ced/Documents/data/boreas/doppler/rss/test/boreas-2020-12-01-13-26'
 
 estimation:
-  start_idx: 10 # Start index for the sequence, useful for debugging
+  start_idx: 0 # Start index for the sequence, useful for debugging
   doppler_cost: true
   direct_cost: true
   use_gyro: true

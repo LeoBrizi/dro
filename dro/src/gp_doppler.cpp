@@ -77,12 +77,12 @@ GPStateEstimator::GPStateEstimator(const YAML::Node& opts, double res) :
     nb_bins_ = range_end - range_start + 1 + 2 * static_cast<int>(kImgPadding_);
 
     // GP convolution preparation
-    auto x = torch::arange(-size_az_, size_az_ + 1, torch::TensorOptions().dtype(torch::kFloat));
+    auto x = torch::arange(-size_az_, size_az_ + 1, torch::TensorOptions().dtype(torch::kFloat64));
     auto mask_smooth = (x.remainder(2) == 0);
     auto mask_interp = (x.remainder(2) != 0);
     auto x_smooth = x.masked_select(mask_smooth);
     auto x_interp = x.masked_select(mask_interp);
-    auto y = torch::arange(-size_range_, size_range_ + 1, torch::TensorOptions().dtype(torch::kFloat));
+    auto y = torch::arange(-size_range_, size_range_ + 1, torch::TensorOptions().dtype(torch::kFloat64));
 
     auto meshgrid = torch::meshgrid({x_smooth, y}, "ij");
     auto XX_smooth = meshgrid[0];
@@ -99,20 +99,20 @@ GPStateEstimator::GPStateEstimator(const YAML::Node& opts, double res) :
     auto n_smooth = X_smooth_.size(0);
     auto K_smooth = seKernel(X_smooth_, X_smooth_, l_az, l_range) + torch::eye(n_smooth) * (sz * sz);
     auto Kinv_smooth = torch::linalg_inv(K_smooth);
-    auto ks_smooth = seKernel(torch::tensor({{0.0, 0.0}}, torch::TensorOptions().dtype(torch::kFloat)), X_smooth_, l_az, l_range);
+    auto ks_smooth = seKernel(torch::tensor({{0.0, 0.0}}, torch::TensorOptions().dtype(torch::kFloat64)), X_smooth_, l_az, l_range);
     beta_smooth_ = (ks_smooth.matmul(Kinv_smooth)).squeeze();
 
     auto n_interp = X_interp_.size(0);
     auto K_interp = seKernel(X_interp_, X_interp_, l_az, l_range) + torch::eye(n_interp) * (sz * sz);
     auto Kinv_interp = torch::linalg_inv(K_interp);
-    auto ks_interp = seKernel(torch::tensor({{0.0, 0.0}}, torch::TensorOptions().dtype(torch::kFloat)), X_interp_, l_az, l_range);
+    auto ks_interp = seKernel(torch::tensor({{0.0, 0.0}}, torch::TensorOptions().dtype(torch::kFloat64)), X_interp_, l_az, l_range);
     beta_interp_ = (ks_interp.matmul(Kinv_interp)).squeeze();
 
     beta_smooth_torch_conv_ = torch::nn::Conv2d(torch::nn::Conv2dOptions(1, 1, {x_smooth.size(0), y.size(0)}).bias(false).padding({x_smooth.size(0)/2, y.size(0)/2}));
     beta_interp_torch_conv_ = torch::nn::Conv2d(torch::nn::Conv2dOptions(1, 1, {x_interp.size(0), y.size(0)}).bias(false).padding({x_interp.size(0)/2, y.size(0)/2}));
 
-    beta_smooth_torch_conv_->weight.set_data(beta_smooth_.reshape({1, 1, x_smooth.size(0), y.size(0)}).to(device_).to(torch::kFloat32));
-    beta_interp_torch_conv_->weight.set_data(beta_interp_.reshape({1, 1, x_interp.size(0), y.size(0)}).to(device_).to(torch::kFloat32));
+    beta_smooth_torch_conv_->weight.set_data(beta_smooth_.reshape({1, 1, x_smooth.size(0), y.size(0)}).to(device_).to(torch::kFloat64));
+    beta_interp_torch_conv_->weight.set_data(beta_interp_.reshape({1, 1, x_interp.size(0), y.size(0)}).to(device_).to(torch::kFloat64));
 
     max_range_idx_ = static_cast<int>(std::floor(opts["doppler"]["max_range"].as<double>() / res));
     min_range_idx_ = static_cast<int>(std::ceil(opts["doppler"]["min_range"].as<double>() / res));
@@ -126,11 +126,11 @@ GPStateEstimator::GPStateEstimator(const YAML::Node& opts, double res) :
         local_map_res_ = opts["direct"]["local_map_res"].as<double>();
         double max_local_map_range = opts["direct"]["max_local_map_range"].as<double>();
         int local_map_size = static_cast<int>(max_local_map_range / local_map_res_) * 2 + 1;
-        local_map_ = torch::zeros({local_map_size, local_map_size}, torch::TensorOptions().device(device_));
+        local_map_ = torch::zeros({local_map_size, local_map_size}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
 
         // auto temp_x = (torch::arange(-local_map_size / 2, local_map_size / 2, torch::TensorOptions().device(device_)) + 1) * local_map_res_;
 
-        auto temp_x = (torch::arange(-local_map_size/2, local_map_size/2+1, 1).to(device_) + 1) * local_map_res_;
+        auto temp_x = (torch::arange(-local_map_size/2, local_map_size/2+1, 1).to(device_).to(torch::kFloat64) + 1) * local_map_res_;
         auto X = -temp_x.unsqueeze(0).transpose(0, 1).repeat({1, local_map_size});
         auto Y = temp_x.unsqueeze(0).repeat({local_map_size, 1});
 
@@ -147,7 +147,7 @@ GPStateEstimator::GPStateEstimator(const YAML::Node& opts, double res) :
 
         // Doppler shift to range
         shift_to_range_ = torch::tensor(res / 2.0, torch::TensorOptions().device(device_));
-        range_vec_ = torch::arange(max_range_idx_direct_, torch::TensorOptions().device(device_)).to(torch::kFloat32) * radar_res_ + (radar_res_ / 2.0);
+        range_vec_ = torch::arange(max_range_idx_direct_, torch::TensorOptions().device(device_)).to(torch::kFloat64) * radar_res_ + (radar_res_ / 2.0);
     }
 
     current_rot_ = torch::tensor(0.0, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
@@ -160,6 +160,8 @@ GPStateEstimator::GPStateEstimator(const YAML::Node& opts, double res) :
 
     if (model_key.find("const_w") != std::string::npos)
         ang_vel_bias_ = opts["estimation"]["ang_vel_bias"].as<double>();
+
+    cv::namedWindow("local_map_cv", cv::WINDOW_AUTOSIZE);
 }
 
 
@@ -187,8 +189,8 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::getUpDownPolarImages(c
 {
     torch::NoGradGuard no_grad;
 
-    auto in_even = img.index({torch::indexing::Slice(0, torch::indexing::None, 2)});
-    auto in_odd = img.index({torch::indexing::Slice(1, torch::indexing::None, 2)});
+    auto in_even = img.index({Slice(0, None, 2)});
+    auto in_odd = img.index({Slice(1, None, 2)});
     auto mean_even = in_even.mean();
     auto mean_odd = in_odd.mean();
     in_even = in_even - mean_even;
@@ -206,22 +208,22 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::getUpDownPolarImages(c
     auto odd_interp_torch = beta_interp_torch_conv_->forward(in_odd_device);
 
     if (even_smooth_torch.size(2) > in_even.size(0)) 
-        even_smooth_torch = even_smooth_torch.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, -1), torch::indexing::Slice()});
+        even_smooth_torch = even_smooth_torch.index({Slice(), Slice(), Slice(0, -1), Slice()});
     if (even_interp_torch.size(2) > in_even.size(0)) 
-        even_interp_torch = even_interp_torch.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, -1), torch::indexing::Slice()});
+        even_interp_torch = even_interp_torch.index({Slice(), Slice(), Slice(0, -1), Slice()});
     if (odd_smooth_torch.size(2) > in_odd.size(0)) 
-        odd_smooth_torch = odd_smooth_torch.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, -1), torch::indexing::Slice()});
+        odd_smooth_torch = odd_smooth_torch.index({Slice(), Slice(), Slice(0, -1), Slice()});
     if (odd_interp_torch.size(2) > in_odd.size(0)) 
-        odd_interp_torch = odd_interp_torch.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, -1), torch::indexing::Slice()});
+        odd_interp_torch = odd_interp_torch.index({Slice(), Slice(), Slice(0, -1), Slice()});
 
-    auto out_even = torch::zeros({1, 1, img.size(0), img.size(1)}, torch::TensorOptions().dtype(torch::kFloat32).device(device_));
-    auto out_odd = torch::zeros({1, 1, img.size(0), img.size(1)}, torch::TensorOptions().dtype(torch::kFloat32).device(device_));
+    auto out_even = torch::zeros({1, 1, img.size(0), img.size(1)}, torch::TensorOptions().dtype(torch::kFloat64).device(device_));
+    auto out_odd = torch::zeros({1, 1, img.size(0), img.size(1)}, torch::TensorOptions().dtype(torch::kFloat64).device(device_));
 
-    out_even.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, torch::indexing::None, 2), torch::indexing::Slice()}, even_smooth_torch);
-    out_even.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(1, -1, 2), torch::indexing::Slice()}, even_interp_torch.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(1, torch::indexing::None), torch::indexing::Slice()}));
-    out_odd.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, torch::indexing::None, 2), torch::indexing::Slice()}, odd_interp_torch);
-    out_odd.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(1, torch::indexing::None, 2), torch::indexing::Slice()}, odd_smooth_torch);
-    out_odd.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), -1, torch::indexing::Slice()}, torch::zeros_like(out_odd.index({torch::indexing::Slice(), torch::indexing::Slice(), -1, torch::indexing::Slice()})));
+    out_even.index_put_({Slice(), Slice(), Slice(0, None, 2), Slice()}, even_smooth_torch);
+    out_even.index_put_({Slice(), Slice(), Slice(1, -1, 2), Slice()}, even_interp_torch.index({Slice(), Slice(), Slice(1, None), Slice()}));
+    out_odd.index_put_({Slice(), Slice(), Slice(0, None, 2), Slice()}, odd_interp_torch);
+    out_odd.index_put_({Slice(), Slice(), Slice(1, None, 2), Slice()}, odd_smooth_torch);
+    out_odd.index_put_({Slice(), Slice(), -1, Slice()}, torch::zeros_like(out_odd.index({Slice(), Slice(), -1, Slice()})));
 
     auto even_std = torch::std(out_even, 3, false, true);
     auto odd_std = torch::std(out_odd, 3, false, true);
@@ -244,14 +246,14 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::getUpDownPolarImages(c
     out_even = out_even.squeeze();
     out_odd = out_odd.squeeze();
 
-    out_even.index_put_({torch::indexing::Slice(0, size_az_)}, 0);
-    out_even.index_put_({torch::indexing::Slice(out_even.size(0) - size_az_, torch::indexing::None)}, 0);
-    out_odd.index_put_({torch::indexing::Slice(0, size_az_)}, 0);
-    out_odd.index_put_({torch::indexing::Slice(out_odd.size(0) - size_az_, torch::indexing::None)}, 0);
-    out_even.index_put_({torch::indexing::Slice(), torch::indexing::Slice(0, size_range_)}, 0);
-    out_even.index_put_({torch::indexing::Slice(), torch::indexing::Slice(out_even.size(1) - size_range_, torch::indexing::None)}, 0);
-    out_odd.index_put_({torch::indexing::Slice(), torch::indexing::Slice(0, size_range_)}, 0);
-    out_odd.index_put_({torch::indexing::Slice(), torch::indexing::Slice(out_odd.size(1) - size_range_, torch::indexing::None)}, 0);
+    out_even.index_put_({Slice(0, size_az_)}, 0);
+    out_even.index_put_({Slice(out_even.size(0) - size_az_, None)}, 0);
+    out_odd.index_put_({Slice(0, size_az_)}, 0);
+    out_odd.index_put_({Slice(out_odd.size(0) - size_az_, None)}, 0);
+    out_even.index_put_({Slice(), Slice(0, size_range_)}, 0);
+    out_even.index_put_({Slice(), Slice(out_even.size(1) - size_range_, None)}, 0);
+    out_odd.index_put_({Slice(), Slice(0, size_range_)}, 0);
+    out_odd.index_put_({Slice(), Slice(out_odd.size(1) - size_range_, None)}, 0);
 
     return {out_odd, out_even};
 }
@@ -306,9 +308,9 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::bilinearInterpolationS
 {
     torch::NoGradGuard no_grad;
 
-    auto az0 = torch::floor(az_r.index({torch::indexing::Slice(), 0})).to(torch::kInt32);
+    auto az0 = torch::floor(az_r.index({Slice(), 0})).to(torch::kInt32);
     auto az1 = az0 + 1;
-    auto r0 = torch::floor(az_r.index({torch::indexing::Slice(), 1})).to(torch::kInt32);
+    auto r0 = torch::floor(az_r.index({Slice(), 1})).to(torch::kInt32);
     auto r1 = r0 + 1;
 
     az0 = torch::clamp(az0, 0, im.size(0) - 1);
@@ -317,18 +319,18 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::bilinearInterpolationS
     r1 = torch::clamp(r1, 0, im.size(1) - 1);
 
     auto az_r_clamped = az_r.clone();
-    az_r_clamped.index_put_({torch::indexing::Slice(), 0}, torch::clamp(az_r_clamped.index({torch::indexing::Slice(), 0}), 0, im.size(0) - 1));
-    az_r_clamped.index_put_({torch::indexing::Slice(), 1}, torch::clamp(az_r_clamped.index({torch::indexing::Slice(), 1}), 0, im.size(1) - 1));
+    az_r_clamped.index_put_({Slice(), 0}, torch::clamp(az_r_clamped.index({Slice(), 0}), 0, im.size(0) - 1));
+    az_r_clamped.index_put_({Slice(), 1}, torch::clamp(az_r_clamped.index({Slice(), 1}), 0, im.size(1) - 1));
 
     auto Ia = im.index({az0, r0});
     auto Ib = im.index({az1, r0});
     auto Ic = im.index({az0, r1});
     auto Id = im.index({az1, r1});
 
-    auto local_1_minus_r = r1.to(torch::kFloat32) - az_r_clamped.index({torch::indexing::Slice(), 1});
-    auto local_r = az_r_clamped.index({torch::indexing::Slice(), 1}) - r0.to(torch::kFloat32);
-    auto local_1_minus_az = az1.to(torch::kFloat32) - az_r_clamped.index({torch::indexing::Slice(), 0});
-    auto local_az = az_r_clamped.index({torch::indexing::Slice(), 0}) - az0.to(torch::kFloat32);
+    auto local_1_minus_r = r1.to(torch::kFloat32) - az_r_clamped.index({Slice(), 1});
+    auto local_r = az_r_clamped.index({Slice(), 1}) - r0.to(torch::kFloat32);
+    auto local_1_minus_az = az1.to(torch::kFloat32) - az_r_clamped.index({Slice(), 0});
+    auto local_az = az_r_clamped.index({Slice(), 0}) - az0.to(torch::kFloat32);
 
     auto wa = local_1_minus_az * local_1_minus_r;
     auto wb = local_az * local_1_minus_r;
@@ -337,9 +339,9 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::bilinearInterpolationS
 
     auto img_interp = wa * Ia + wb * Ib + wc * Ic + wd * Id;
 
-    auto d_I_d_az_r = torch::empty({az_r.size(0), 1, 2}, torch::TensorOptions().device(device_));
-    d_I_d_az_r.index_put_({torch::indexing::Slice(), 0, 0}, (Ib - Ia) * local_1_minus_r + (Id - Ic) * local_r);
-    d_I_d_az_r.index_put_({torch::indexing::Slice(), 0, 1}, (Ic - Ia) * local_1_minus_az + (Id - Ib) * local_az);
+    auto d_I_d_az_r = torch::empty({az_r.size(0), 1, 2}, torch::TensorOptions().dtype(torch::kFloat64).device(device_));
+    d_I_d_az_r.index_put_({Slice(), 0, 0}, (Ib - Ia) * local_1_minus_r + (Id - Ic) * local_r);
+    d_I_d_az_r.index_put_({Slice(), 0, 1}, (Ic - Ia) * local_1_minus_az + (Id - Ib) * local_az);
 
     return {img_interp, d_I_d_az_r};
 }
@@ -355,12 +357,12 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
     auto d_pos_d_state = d_pos_d_state_opt.value();
 
     velocities = velocities.view({-1, 1, 2});
-    auto mask = velocities.index({torch::indexing::Slice(), 0, 0}) > 3.0;
+    auto mask = velocities.index({Slice(), 0, 0}) > 3.0;
 
     velocities.index_put_({mask, 0, 1}, velocities.index({mask, 0, 1}) + vy_bias_);
     velocities.index_put_({~mask, 0, 1}, velocities.index({~mask, 0, 1}) + velocities.index({~mask, 0, 0}) * vy_bias_ / 3.0);
 
-    d_vel_d_state.index_put_({~mask, 1, torch::indexing::Slice()}, d_vel_d_state.index({~mask, 1, torch::indexing::Slice()}) + vy_bias_ / 3.0 * d_vel_d_state.index({~mask, 0, torch::indexing::Slice()}));
+    d_vel_d_state.index_put_({~mask, 1, Slice()}, d_vel_d_state.index({~mask, 1, Slice()}) + vy_bias_ / 3.0 * d_vel_d_state.index({~mask, 0, Slice()}));
 
     auto shifts = torch::matmul(velocities, vel_to_bin_vec_.view({-1, 2, 1})).squeeze();
     auto d_shift_d_state = torch::matmul(vel_to_bin_vec_.view({-1, 1, 2}), d_vel_d_state);
@@ -379,7 +381,7 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
 
         jacobian = torch::matmul(
             aligned_odd_coeff_sparse.view({-1, 1, 1}),
-            d_shift_d_state.index({doppler_az_ids_sparse_, torch::indexing::Slice(), torch::indexing::Slice()})
+            d_shift_d_state.index({doppler_az_ids_sparse_, Slice(), Slice()})
         ) * temp_even_img_sparse_.unsqueeze(-1).unsqueeze(-1);
         
         residual = residual.flatten();
@@ -400,22 +402,22 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
         auto [interp_direct_sparse, d_interp_direct_d_xy_sparse] = bilinearInterpolationSparse(local_map_blurred_, cart_idx_sparse);
         auto residual_direct_sparse = interp_direct_sparse * polar_intensity_sparse_;
 
-        auto d_cart_sparse_d_state = torch::matmul(d_cart_d_shift_sparse, d_shift_d_state.view({-1, 1, state_size})).index({direct_az_ids_sparse_, torch::indexing::Slice(), torch::indexing::Slice()});
+        auto d_cart_sparse_d_state = torch::matmul(d_cart_d_shift_sparse, d_shift_d_state.view({-1, 1, state_size})).index({direct_az_ids_sparse_, Slice(), Slice()});
 
         if (d_rot_d_state_opt.has_value()) 
         {
             auto d_rot_d_state = d_rot_d_state_opt.value();
-            d_cart_sparse_d_state.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), -1},
-                d_cart_sparse_d_state.index({torch::indexing::Slice(), torch::indexing::Slice(), -1}) +
+            d_cart_sparse_d_state.index_put_({Slice(), Slice(), -1},
+                d_cart_sparse_d_state.index({Slice(), Slice(), -1}) +
                 torch::matmul(d_cart_d_rot_sparse, d_rot_d_state.index({direct_az_ids_sparse_}).view({-1, 1, 1})).squeeze());
         }
 
         d_cart_sparse_d_state += d_pos_d_state.index({direct_az_ids_sparse_}).view({-1, 2, state_size});
 
-        d_cart_sparse_d_state.index_put_({torch::indexing::Slice(), 0, torch::indexing::Slice()},
-            d_cart_sparse_d_state.index({torch::indexing::Slice(), 0, torch::indexing::Slice()}) / (-local_map_res_));
-        d_cart_sparse_d_state.index_put_({torch::indexing::Slice(), 1, torch::indexing::Slice()},
-            d_cart_sparse_d_state.index({torch::indexing::Slice(), 1, torch::indexing::Slice()}) / local_map_res_);
+        d_cart_sparse_d_state.index_put_({Slice(), 0, Slice()},
+            d_cart_sparse_d_state.index({Slice(), 0, Slice()}) / (-local_map_res_));
+        d_cart_sparse_d_state.index_put_({Slice(), 1, Slice()},
+            d_cart_sparse_d_state.index({Slice(), 1, Slice()}) / local_map_res_);
 
         auto jacobian_direct_sparse = (torch::matmul(d_interp_direct_d_xy_sparse, d_cart_sparse_d_state) *
                                        polar_intensity_sparse_.unsqueeze(-1).unsqueeze(-1)).squeeze();
@@ -471,13 +473,13 @@ torch::Tensor GPStateEstimator::localMapToPolarCoord()
     auto cart = local_map_xy_;
     auto polar = torch::zeros({cart.size(0), cart.size(1), 2}, torch::TensorOptions().device(device_));
 
-    polar.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), 0},
-        torch::atan2(cart.index({torch::indexing::Slice(), torch::indexing::Slice(), 1, 0}),
-                     cart.index({torch::indexing::Slice(), torch::indexing::Slice(), 0, 0})));
+    polar.index_put_({Slice(), Slice(), 0},
+        torch::atan2(cart.index({Slice(), Slice(), 1, 0}),
+                     cart.index({Slice(), Slice(), 0, 0})));
 
-    polar.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), 1},
-        torch::sqrt(torch::pow(cart.index({torch::indexing::Slice(), torch::indexing::Slice(), 0, 0}), 2) +
-                    torch::pow(cart.index({torch::indexing::Slice(), torch::indexing::Slice(), 1, 0}), 2)));
+    polar.index_put_({Slice(), Slice(), 1},
+        torch::sqrt(torch::pow(cart.index({Slice(), Slice(), 0, 0}), 2) +
+                    torch::pow(cart.index({Slice(), Slice(), 1, 0}), 2)));
 
     return polar;
 }
@@ -495,53 +497,52 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> GPStateEstimator::polarT
     auto even_range = range_vec_.index({direct_r_ids_even_}) - doppler_shift.index({direct_az_ids_even_}) * shift_to_range_;
     auto odd_range = range_vec_.index({direct_r_ids_odd_}) + doppler_shift.index({direct_az_ids_odd_}) * shift_to_range_;
     
-    auto x = torch::empty({direct_nb_non_zero_}, torch::TensorOptions().device(device_));
+    auto x = torch::empty({direct_nb_non_zero_}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     x.index_put_({mask_direct_even_}, c_az.index({mask_direct_even_}) * even_range);
     x.index_put_({mask_direct_odd_}, c_az.index({mask_direct_odd_}) * odd_range);
-
-    auto y = torch::empty({direct_nb_non_zero_}, torch::TensorOptions().device(device_));
+    
+    auto y = torch::empty({direct_nb_non_zero_}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     y.index_put_({mask_direct_even_}, s_az.index({mask_direct_even_}) * even_range);
     y.index_put_({mask_direct_odd_}, s_az.index({mask_direct_odd_}) * odd_range);
-
+    
     auto c_rot_min = torch::cos(rot.squeeze());
     auto s_rot_min = torch::sin(rot.squeeze());
-
+    
     auto c_rot = c_rot_min.index({direct_az_ids_sparse_});
     auto s_rot = s_rot_min.index({direct_az_ids_sparse_});
-
     auto x_c_rot = x * c_rot;
     auto y_s_rot = y * s_rot;
     auto x_s_rot = x * s_rot;
     auto y_c_rot = y * c_rot;
-
+    
     auto x_rot = x_c_rot - y_s_rot;
     auto y_rot = x_s_rot + y_c_rot;
-
+    
     auto x_trans = x_rot + pos.squeeze().index({direct_az_ids_sparse_, 0});
     auto y_trans = y_rot + pos.squeeze().index({direct_az_ids_sparse_, 1});
-
+    
     auto cart = torch::stack({x_trans.unsqueeze(-1), y_trans.unsqueeze(-1)}, 1);
-
-    auto d_cart_d_rot = torch::zeros({direct_nb_non_zero_, 2, 1}, torch::TensorOptions().device(device_));
-    d_cart_d_rot.index_put_({torch::indexing::Slice(), 0, 0}, -y_rot);
-    d_cart_d_rot.index_put_({torch::indexing::Slice(), 1, 0}, x_rot);
-
-    auto d_cart_d_shift = torch::empty({nb_azimuths_, 2, 1}, torch::TensorOptions().device(device_));
-
-    d_cart_d_shift.index_put_({torch::indexing::Slice(0, torch::indexing::None, 2), 0, 0}, c_az_min.index({torch::indexing::Slice(0, torch::indexing::None, 2)}) * -shift_to_range_);
-    d_cart_d_shift.index_put_({torch::indexing::Slice(1, torch::indexing::None, 2), 0, 0}, c_az_min.index({torch::indexing::Slice(1, torch::indexing::None, 2)}) * shift_to_range_);
-    d_cart_d_shift.index_put_({torch::indexing::Slice(0, torch::indexing::None, 2), 1, 0}, s_az_min.index({torch::indexing::Slice(0, torch::indexing::None, 2)}) * -shift_to_range_);
-    d_cart_d_shift.index_put_({torch::indexing::Slice(1, torch::indexing::None, 2), 1, 0}, s_az_min.index({torch::indexing::Slice(1, torch::indexing::None, 2)}) * shift_to_range_);
-
-    auto d_trans_d_cart = torch::empty({nb_azimuths_, 2, 2}, torch::TensorOptions().device(device_));
-
-    d_trans_d_cart.index_put_({torch::indexing::Slice(), 0, 0}, c_rot_min);
-    d_trans_d_cart.index_put_({torch::indexing::Slice(), 0, 1}, -s_rot_min);
-    d_trans_d_cart.index_put_({torch::indexing::Slice(), 1, 0}, s_rot_min);
-    d_trans_d_cart.index_put_({torch::indexing::Slice(), 1, 1}, c_rot_min);
-
+    
+    auto d_cart_d_rot = torch::zeros({direct_nb_non_zero_, 2, 1}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
+    d_cart_d_rot.index_put_({Slice(), 0, 0}, -y_rot);
+    d_cart_d_rot.index_put_({Slice(), 1, 0}, x_rot);
+    
+    auto d_cart_d_shift = torch::empty({nb_azimuths_, 2, 1}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
+    
+    d_cart_d_shift.index_put_({Slice(0, None, 2), 0, 0}, c_az_min.index({Slice(0, None, 2)}) * -shift_to_range_);
+    d_cart_d_shift.index_put_({Slice(1, None, 2), 0, 0}, c_az_min.index({Slice(1, None, 2)}) * shift_to_range_);
+    d_cart_d_shift.index_put_({Slice(0, None, 2), 1, 0}, s_az_min.index({Slice(0, None, 2)}) * -shift_to_range_);
+    d_cart_d_shift.index_put_({Slice(1, None, 2), 1, 0}, s_az_min.index({Slice(1, None, 2)}) * shift_to_range_);
+    
+    auto d_trans_d_cart = torch::empty({nb_azimuths_, 2, 2}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
+    
+    d_trans_d_cart.index_put_({Slice(), 0, 0}, c_rot_min);
+    d_trans_d_cart.index_put_({Slice(), 0, 1}, -s_rot_min);
+    d_trans_d_cart.index_put_({Slice(), 1, 0}, s_rot_min);
+    d_trans_d_cart.index_put_({Slice(), 1, 1}, c_rot_min);
+    
     d_cart_d_shift = torch::matmul(d_trans_d_cart, d_cart_d_shift);
-
+    
     return {cart, d_cart_d_rot, d_cart_d_shift};
 }
 
@@ -550,11 +551,11 @@ torch::Tensor GPStateEstimator::polarCoordCorrection(const torch::Tensor& pos, c
     torch::NoGradGuard no_grad;
 
     auto polar_coord = polar_coord_raw_gp_infered_;
-    auto c_az = torch::cos(polar_coord.index({torch::indexing::Slice(), torch::indexing::Slice(), 0}));
-    auto s_az = torch::sin(polar_coord.index({torch::indexing::Slice(), torch::indexing::Slice(), 0}));
+    auto c_az = torch::cos(polar_coord.index({Slice(), Slice(), 0}));
+    auto s_az = torch::sin(polar_coord.index({Slice(), Slice(), 0}));
 
-    auto x = c_az * polar_coord.index({torch::indexing::Slice(), torch::indexing::Slice(), 1});
-    auto y = s_az * polar_coord.index({torch::indexing::Slice(), torch::indexing::Slice(), 1});
+    auto x = c_az * polar_coord.index({Slice(), Slice(), 1});
+    auto y = s_az * polar_coord.index({Slice(), Slice(), 1});
 
     auto c_rot = torch::cos(rot);
     auto s_rot = torch::sin(rot);
@@ -562,12 +563,12 @@ torch::Tensor GPStateEstimator::polarCoordCorrection(const torch::Tensor& pos, c
     auto x_rot = x * c_rot - y * s_rot;
     auto y_rot = x * s_rot + y * c_rot;
 
-    auto x_trans = x_rot + pos.index({torch::indexing::Slice(), 0});
-    auto y_trans = y_rot + pos.index({torch::indexing::Slice(), 1});
+    auto x_trans = x_rot + pos.index({Slice(), 0});
+    auto y_trans = y_rot + pos.index({Slice(), 1});
 
-    auto polar = torch::zeros({nb_azimuths_, polar_coord.size(1), 2}, torch::TensorOptions().device(device_));
-    polar.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), 0}, torch::atan2(y_trans, x_trans));
-    polar.index_put_({torch::indexing::Slice(), torch::indexing::Slice(), 1}, torch::sqrt(x_trans * x_trans + y_trans * y_trans));
+    auto polar = torch::zeros({nb_azimuths_, polar_coord.size(1), 2}, torch::TensorOptions().dtype(torch::kFloat64).device(device_));
+    polar.index_put_({Slice(), Slice(), 0}, torch::atan2(y_trans, x_trans));
+    polar.index_put_({Slice(), Slice(), 1}, torch::sqrt(x_trans * x_trans + y_trans * y_trans));
 
     return polar;
 }
@@ -607,7 +608,7 @@ torch::Tensor GPStateEstimator::solve(const torch::Tensor& state_init, int nb_it
         auto [res, jac] = costFunctionAndJacobian(state, use_doppler_, use_direct_ && (step_counter_ > 0), degraded);
 
         if (remove_angular && !use_gyro_) {
-            jac = jac.index({torch::indexing::Slice(), torch::indexing::Slice(0, -1)});
+            jac = jac.index({Slice(), Slice(0, -1)});
         }
         auto jac_view = jac.reshape({-1, jac.size(-1)});
         auto grad = 3 * torch::sum(res.flatten().unsqueeze(-1).pow(2) * jac_view, 0);
@@ -658,7 +659,7 @@ torch::Tensor GPStateEstimator::solve(const torch::Tensor& state_init, int nb_it
     auto result = motion_model_->getVelPosRot(state, false);
     auto vel = std::get<0>(result);
     bool try_degraded = std::dynamic_pointer_cast<ConstVelConstW>(motion_model_) &&
-                        (torch::abs(state[2]).item<double>() > maxAngVel(state.index({torch::indexing::Slice(0, 2)})));
+                        (torch::abs(state[2]).item<double>() > maxAngVel(state.index({Slice(0, 2)})));
 
     try_degraded = try_degraded ||
                    (torch::abs(torch::norm(vel[-1]) - previous_vel_).item<double>() > max_diff_vel_);
@@ -717,7 +718,7 @@ void GPStateEstimator::moveLocalMap(const torch::Tensor& pos, const torch::Tenso
     // Get the new localMap via bilinear interpolation
     
     auto [local_map, _] = bilinearInterpolation(local_map_, new_idx);
-    local_map_ = local_map.squeeze().to(torch::kFloat32);
+    local_map_ = local_map.squeeze().to(torch::kFloat64);
 
 }
 
@@ -756,7 +757,8 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
     if (pose_estimation_) 
     {
         if (step_counter_ > 0) 
-        {
+        {   
+
             auto result = motion_model_->getVelPosRot(state_init_, false);
             auto vel_body = std::get<0>(result);
             auto prev_scan_pos = std::get<2>(result);
@@ -787,7 +789,6 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
                 {
                     per_line_shift.index_put_({Slice(1, None, 2)}, per_line_shift.index({Slice(1, None, 2)}) * -1);
                 }
-
                 auto prev_shifted = perLineInterpolation(polar_intensity_, per_line_shift);
 
                 auto cos_prev = torch::cos(prev_scan_rot);
@@ -795,10 +796,12 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
                 auto rot_mats_transposed = torch::stack({torch::stack({cos_prev, sin_prev}, 1), torch::stack({-sin_prev, cos_prev}, 1)}, 2).squeeze(-1);
 
                 prev_scan_pos = prev_scan_pos.view({-1, 2, 1});
+
                 auto pos = torch::matmul(rot_mats_transposed, (-prev_scan_pos + frame_pos.view({-1, 2, 1})));
                 auto rot = -prev_scan_rot + frame_rot;
                 
                 auto polar_coord_corrected = polarCoordCorrection(pos, rot);
+
                 polar_coord_corrected.index_put_({Slice(), Slice(), 0}, polar_coord_corrected.index({Slice(), Slice(), 0}) - azimuths_[0]);
                 auto mask_neg = polar_coord_corrected.index({Slice(), Slice(), 0}) < 0;
                 polar_coord_corrected.index_put_({mask_neg}, polar_coord_corrected.index({mask_neg}) + torch::tensor({2.0 * M_PI, 0.0}, device_));
@@ -814,10 +817,18 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
                 temp_polar.index_put_({mask_temp_neg}, temp_polar.index({mask_temp_neg}) + torch::tensor({2.0 * M_PI, 0.0}, device_));
                 temp_polar.index_put_({Slice(), Slice(), 0}, temp_polar.index({Slice(), Slice(), 0}) * (static_cast<double>(nb_azimuths_) / (2.0 * M_PI)));
                 temp_polar.index_put_({Slice(), Slice(), 1}, (temp_polar.index({Slice(), Slice(), 1}) - radar_res_ / 2.0) / radar_res_);
-
+                
                 polar_target = torch::cat({polar_target, polar_target.index({0}).unsqueeze(0)}, 0);
                 auto local_map_update = bilinearInterpolation(polar_target, temp_polar).first;
-
+                
+                // auto prev_shifted_cpu = prev_shifted.detach().cpu().to(torch::kFloat32);
+                // auto prev_shifted_cv = tensorToMat(prev_shifted_cpu);
+                // cv::resize(prev_shifted_cv, prev_shifted_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);                
+                // cv::namedWindow("prev_shifted_cv", cv::WINDOW_AUTOSIZE);
+                // cv::imshow("prev_shifted_cv", prev_shifted_cv);
+                // cv::waitKey(0);
+                // cv::destroyAllWindows();
+                
                 if (step_counter_ == 1) 
                 {
                     local_map_.index_put_({local_map_mask_}, local_map_update.index({local_map_mask_}));
@@ -835,11 +846,11 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         }
     }
 
-    azimuths_ = azimuths.to(device_).to(torch::kFloat32);
+    azimuths_ = azimuths.to(device_).to(torch::kFloat64);
     nb_azimuths_ = azimuths.size(0);
     motion_model_->setTime(timestamps_, timestamps_[0].item<double>());
 
-    auto dirs = torch::empty({nb_azimuths_, 2}, torch::TensorOptions().device(device_));
+    auto dirs = torch::empty({nb_azimuths_, 2}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
     dirs.index_put_({Slice(), 0}, torch::cos(azimuths_));
     dirs.index_put_({Slice(), 1}, torch::sin(azimuths_));
     vel_to_bin_vec_ = vel_to_bin_ * dirs;
@@ -849,11 +860,11 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
 
     if (use_doppler_) {
 
-        auto pad = torch::zeros({nb_azimuths_, static_cast<int>(kImgPadding_)}, torch::TensorOptions().dtype(torch::kFloat32).device(device_));
+        auto pad = torch::zeros({nb_azimuths_, static_cast<int>(kImgPadding_)}, torch::TensorOptions().dtype(torch::kFloat64).device(device_));
         temp_even_img_ = torch::cat({pad, even_img, pad}, 1);
         auto temp_odd_img = torch::cat({pad, odd_img, pad}, 1);
 
-        odd_coeff_ = torch::empty_like(temp_even_img_);
+        odd_coeff_ = torch::empty_like(temp_even_img_, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
         odd_coeff_.index_put_({Slice(), Slice(None, -1)}, temp_odd_img.index({Slice(), Slice(1, None)}) - temp_odd_img.index({Slice(), Slice(None, -1)}));
         odd_coeff_.index_put_({Slice(), -1}, 0);
         odd_bias_ = temp_odd_img.clone();
@@ -861,15 +872,15 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         auto mask_doppler = temp_even_img_ != 0;
         temp_even_img_sparse_ = temp_even_img_.index({mask_doppler});
 
-        doppler_az_ids_sparse_ = torch::arange(nb_azimuths_, torch::TensorOptions().device(device_)).unsqueeze(1).repeat({1, temp_even_img_.size(1)}).index({mask_doppler});
-        doppler_bin_vec_sparse_ = torch::arange(nb_bins_, torch::TensorOptions().device(device_)).unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_doppler});
+        doppler_az_ids_sparse_ = torch::arange(nb_azimuths_, torch::TensorOptions().device(device_).dtype(torch::kInt32)).unsqueeze(1).repeat({1, temp_even_img_.size(1)}).index({mask_doppler});
+        doppler_bin_vec_sparse_ = torch::arange(nb_bins_, torch::TensorOptions().device(device_).dtype(torch::kInt32)).unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_doppler});
     }
 
     if (use_direct_) 
     {
         if (use_doppler_) 
         {
-            polar_intensity_ = torch::zeros({azimuths.size(0), min_range_idx_ + odd_img.size(1)}, torch::TensorOptions().device(device_));
+            polar_intensity_ = torch::zeros({azimuths.size(0), min_range_idx_ + odd_img.size(1)}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
             polar_intensity_.index_put_({Slice(None, None, 2), Slice(min_range_idx_, None)}, even_img.index({Slice(None, None, 2), Slice()}));
             polar_intensity_.index_put_({Slice(1, None, 2), Slice(min_range_idx_, None)}, odd_img.index({Slice(1, None, 2), Slice()}));
         } 
@@ -885,8 +896,9 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
             polar_intensity_ = torch::where(torch::isnan(polar_intensity_), torch::zeros_like(polar_intensity_), polar_intensity_);
         }
 
-        auto range_vec = torch::arange(max_range_idx_, torch::TensorOptions().device(device_).dtype(torch::kFloat32)) * radar_res_ + radar_res_ * 0.5;
-        polar_coord_raw_gp_infered_ = torch::zeros({nb_azimuths_, max_range_idx_, 2}, torch::TensorOptions().device(device_));
+        auto range_vec = torch::arange(max_range_idx_, torch::TensorOptions().device(device_).dtype(torch::kFloat64)) * radar_res_ + (radar_res_ * 0.5);
+
+        polar_coord_raw_gp_infered_ = torch::zeros({nb_azimuths_, max_range_idx_, 2}, torch::TensorOptions().device(device_).dtype(torch::kFloat64));
         polar_coord_raw_gp_infered_.index_put_({Slice(), Slice(), 0}, azimuths_.unsqueeze(1).repeat({1, max_range_idx_}));
         polar_coord_raw_gp_infered_.index_put_({Slice(), Slice(), 1}, range_vec.unsqueeze(0).repeat({nb_azimuths_, 1}));
 
@@ -896,24 +908,24 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         polar_intensity_sparse_ = temp_intensity.index({mask_direct});
 
         direct_r_sparse_ = range_vec_.unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_direct});
-        direct_az_ids_sparse_ = torch::arange(nb_azimuths_, torch::TensorOptions().device(device_)).unsqueeze(1).repeat({1, max_range_idx_direct_}).index({mask_direct});
-        direct_r_ids_sparse_ = torch::arange(max_range_idx_direct_, torch::TensorOptions().device(device_)).unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_direct});
+        direct_az_ids_sparse_ = torch::arange(nb_azimuths_, torch::TensorOptions().device(device_).dtype(torch::kInt32)).unsqueeze(1).repeat({1, max_range_idx_direct_}).index({mask_direct});
+        direct_r_ids_sparse_ = torch::arange(max_range_idx_direct_, torch::TensorOptions().device(device_).dtype(torch::kInt32)).unsqueeze(0).repeat({nb_azimuths_, 1}).index({mask_direct});
         if (doppler_radar_) 
         {
-            auto mde = torch::empty_like(mask_direct);
+            auto mde = torch::empty_like(mask_direct, torch::TensorOptions().dtype(torch::kBool).device(device_));
             mde.index_put_({Slice(1, None, 2)}, false);
             mde.index_put_({Slice(None, None, 2)}, true);
             mask_direct_even_ = mde.index({mask_direct});
 
-            auto mdo = torch::empty_like(mask_direct);
+            auto mdo = torch::empty_like(mask_direct, torch::TensorOptions().dtype(torch::kBool).device(device_));
             mdo.index_put_({Slice(None, None, 2)}, false);
             mdo.index_put_({Slice(1, None, 2)}, true);
             mask_direct_odd_ = mdo.index({mask_direct});
         } 
         else 
         {
-            mask_direct_even_ = torch::ones_like(polar_intensity_sparse_, torch::TensorOptions().dtype(torch::kBool));
-            mask_direct_odd_ = torch::zeros_like(polar_intensity_sparse_, torch::TensorOptions().dtype(torch::kBool));
+            mask_direct_even_ = torch::ones_like(polar_intensity_sparse_, torch::TensorOptions().dtype(torch::kBool).device(device_));
+            mask_direct_odd_ = torch::zeros_like(polar_intensity_sparse_, torch::TensorOptions().dtype(torch::kBool).device(device_));
         }
 
         direct_nb_non_zero_ = polar_intensity_sparse_.size(0);
@@ -933,30 +945,31 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         state_init_.zero_();
     }
 
-
-    auto polar_intensity_cpu = polar_intensity_.detach().cpu().to(torch::kFloat32);
+    // visualization
+    // auto polar_intensity_cpu = polar_intensity_.detach().cpu().to(torch::kFloat32);
     auto local_map_cpu = local_map_.detach().cpu().to(torch::kFloat32);
-    auto polar_intensity_cv = tensorToMat(polar_intensity_cpu);
+    // auto polar_intensity_cv = tensorToMat(polar_intensity_cpu);
     auto local_map_cv = tensorToMat(local_map_cpu);
-    // auto local_map_blurred_cv = tensorToMat(local_map_blurred_cpu);
-    cv::resize(polar_intensity_cv, polar_intensity_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
+    // // auto local_map_blurred_cv = tensorToMat(local_map_blurred_cpu);
+    // cv::resize(polar_intensity_cv, polar_intensity_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
     cv::resize(local_map_cv, local_map_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
     
-    cv::namedWindow("polar_intensity_cv", cv::WINDOW_AUTOSIZE);
-    cv::imshow("polar_intensity_cv", polar_intensity_cv);
-    cv::namedWindow("local_map_cv", cv::WINDOW_AUTOSIZE);
+    // cv::namedWindow("polar_intensity_cv", cv::WINDOW_AUTOSIZE);
+    // cv::imshow("polar_intensity_cv", polar_intensity_cv);
+    
     cv::imshow("local_map_cv", local_map_cv);
-    cv::waitKey(0);
-    cv::destroyAllWindows();
-    if (step_counter_ > 0) {
-        auto local_map_blurred_cpu = local_map_blurred_.detach().cpu().to(torch::kFloat32);
-        auto local_map_blurred_cv = tensorToMat(local_map_blurred_cpu);
-        cv::resize(local_map_blurred_cv, local_map_blurred_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
-        cv::namedWindow("local_map_blurred_cv", cv::WINDOW_AUTOSIZE);
-        cv::imshow("local_map_blurred_cv", local_map_blurred_cv);
-        cv::waitKey(0);
-        cv::destroyWindow("local_map_blurred_cv");
-    }
+    cv::waitKey(1);
+    // cv::waitKey(0);
+    // cv::destroyAllWindows();
+    // if (step_counter_ > 0) {
+    //     auto local_map_blurred_cpu = local_map_blurred_.detach().cpu().to(torch::kFloat32);
+    //     auto local_map_blurred_cv = tensorToMat(local_map_blurred_cpu);
+    //     cv::resize(local_map_blurred_cv, local_map_blurred_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
+    //     cv::namedWindow("local_map_blurred_cv", cv::WINDOW_AUTOSIZE);
+    //     cv::imshow("local_map_blurred_cv", local_map_blurred_cv);
+    //     cv::waitKey(0);
+    //     cv::destroyWindow("local_map_blurred_cv");
+    // }
     // cv::namedWindow("local_map_blurred_cv", cv::WINDOW_AUTOSIZE);
     // cv::imshow("local_map_blurred_cv", local_map_blurred_cv);
     // cv::waitKey(0);
