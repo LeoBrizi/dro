@@ -6,7 +6,7 @@ data:
                         
 
 estimation:
-  doppler_cost: true
+  doppler_cost: false
   direct_cost: true
   use_gyro: true
   gyro_bias_estimation: true

@@ -99,7 +99,7 @@ private:
     torch::Tensor previous_vel_;
     double local_map_res_;
     int local_map_zero_idx_;
-    double one_minus_alpha_, alpha_;
+    float one_minus_alpha_, alpha_;
     double radar_beta_, vel_to_bin_;
     int max_range_idx_, min_range_idx_;
     int max_range_idx_direct_, min_range_idx_direct_;
@@ -149,4 +149,5 @@ private:
     int step_counter_;
     torch::Tensor prev_state_;
     double ang_vel_bias_;
+    torch::Tensor odd_img_, even_img_;
 };

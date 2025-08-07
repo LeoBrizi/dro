@@ -10,6 +10,7 @@ void MotionModel::setTime(const torch::Tensor& time, const double& t0)
     time_ = (time - t0).to(torch::kFloat32) * 1.0e-6;
     t0_ = t0;
     num_steps_ = torch::tensor(time.size(0), device_);
+    return;
 }
 
 double MotionModel::getLocalTime(const double& time) const 
@@ -95,6 +96,7 @@ void ConstBodyVelGyro::setGyroData(const torch::Tensor& gyro_time, const torch::
     offset_ = torch::cat({offset_, offset_[-1].unsqueeze(0)}, 0);
 
     initialised_ = true;
+    return;
 }
 
 void ConstBodyVelGyro::setGyroBias(const torch::Tensor& gyro_bias) 
@@ -107,6 +109,7 @@ void ConstBodyVelGyro::setGyroBias(const torch::Tensor& gyro_bias)
     coeff_ = torch::cat({coeff_, coeff_[-1].unsqueeze(0)}, 0);
     offset_ = gyro_yaw_.slice(0, 0, -1) - coeff_.slice(0, 0, -1) * gyro_time_.slice(0, 0, -1);
     offset_ = torch::cat({offset_, offset_[-1].unsqueeze(0)}, 0);
+    return;
 }
 
 void ConstBodyVelGyro::setTime(const torch::Tensor& time, const double& t0) 
@@ -158,6 +161,8 @@ void ConstBodyVelGyro::setTime(const torch::Tensor& time, const double& t0)
     R_integral_.slice(0, 1).select(1, 0).select(1, 1) = -cumulative_sin_r;
     R_integral_.slice(0, 1).select(1, 1).select(1, 0) = cumulative_sin_r;
     R_integral_.slice(0, 1).select(1, 1).select(1, 1) = cumulative_cos_r;
+
+    return;
 }
 
 std::tuple<torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor, torch::Tensor, OptionalTensor>

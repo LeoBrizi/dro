@@ -199,7 +199,9 @@ int main(int argc, char** argv) {
         radar_frame.frame = radar_frames[i].filename().string();
 
         // Load the radar frame
-        auto radar_data = utils::loadRadarData(radar_frames[i].string());
+        int min_id = static_cast<int>(std::round(2.5f / res));
+        auto radar_data = utils::loadRadarData(radar_frames[i].string(), 5600, min_id);
+        std::cerr << "PROCESSING THE RADAR: " << radar_frames[i].string() << std::endl;
 
         // Update gyro bias if enabled
         if (use_gyro && estimate_gyro_bias && gyro_bias_initialised) {
@@ -275,12 +277,14 @@ int main(int argc, char** argv) {
         double vel_norm = velocity.norm();
         if (estimate_vy_bias && vel_norm > 3.0) {
             state_estimator.setVyBias(0.0);
-            auto doppler_vel = state_estimator.getDopplerVelocity(); // vector<double> size 2
-            Eigen::Vector3d dv(
-                doppler_vel[0].item<double>(),
-                doppler_vel[1].item<double>(),
-                0.0
-            );
+            Eigen::Vector3d dv = Eigen::Vector3d::Zero();
+
+            if (config["estimation"]["doppler_cost"].as<bool>()) {
+                auto doppler_vel = state_estimator.getDopplerVelocity(); // vector<double> size 2
+                dv[0] = doppler_vel[0].item<double>();
+                dv[1] = doppler_vel[1].item<double>();
+            }
+
             std::cout << "\nDoppler velocity: [" 
                     << dv.transpose() << "]\n";
             Eigen::Vector3d axle_vel;

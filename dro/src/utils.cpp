@@ -4,6 +4,8 @@
 
 namespace utils {
 
+using torch::indexing::Slice;
+
 torch::Tensor dopplerUpDown(const RadarFrame& rf) {
     // Compute base path by removing last directory
     auto pos = rf.sensor_root.find_last_of('/');
@@ -42,8 +44,8 @@ torch::Tensor getGaussianKernel2D(int ksize_x, int ksize_y, double sigma_x, doub
     int half_x = ksize_x / 2;
     int half_y = ksize_y / 2;
 
-    auto x = torch::arange(-half_x, half_x + 1, torch::TensorOptions().dtype(torch::kFloat64).device(device));
-    auto y = torch::arange(-half_y, half_y + 1, torch::TensorOptions().dtype(torch::kFloat64).device(device));
+    auto x = torch::arange(-half_x, half_x + 1, torch::TensorOptions().dtype(torch::kFloat32).device(device));
+    auto y = torch::arange(-half_y, half_y + 1, torch::TensorOptions().dtype(torch::kFloat32).device(device));
 
     auto xx = x.pow(2).div(2 * sigma_x * sigma_x).unsqueeze(1);  // shape (kx, 1)
     auto yy = y.pow(2).div(2 * sigma_y * sigma_y).unsqueeze(0);  // shape (1, ky)
@@ -153,7 +155,7 @@ RadarData loadRadarData(
 
     int H = img.rows;
     int W = img.cols;
-    int polarW = W - 11 - min_id;
+    int polarW = W - 11;
     if (polarW <= 0) {
         throw std::runtime_error("Image too narrow for polar data after skipping");
     }
@@ -161,32 +163,47 @@ RadarData loadRadarData(
     // 2) Allocate output tensors on CPU
     torch::Tensor timestamps = torch::empty({H}, torch::kFloat64);
     torch::Tensor azimuths  = torch::empty({H}, torch::kFloat64);
-    torch::Tensor polar      = torch::empty({H, polarW}, torch::kFloat64);
+    torch::Tensor polar      = torch::empty({H, polarW}, torch::kFloat32);
 
     // 3) Fill in each row
     for (int i = 0; i < H; ++i) {
         const uint8_t* row = img.ptr<uint8_t>(i);
-
         // // --- timestamps: bytes 0..7 as uint64, then *1e‑3
         // uint64_t ts = 0;
         // for (int b = 0; b < 8; ++b) {
         //     ts |= uint64_t(row[b]) << (8 * b);
         // }
         // timestamps[i] = static_cast<double>(ts);
-        timestamps[i] = *((int64_t *)(row));
-        azimuths[i] = *((uint16_t *)(row + 8)) * 2.0f * float(M_PI) / double(encoder_size);
-
         // // --- azimuth: bytes 8..9 as uint16 a, then /encoder_size
         // uint16_t enc = uint16_t(row[8]) | (uint16_t(row[9]) << 8);
         // float az = static_cast<float>(enc) * 2.0f * float(M_PI) / float(encoder_size);
         // azimuths[i] = az;
-
         // --- polar: bytes 11+min_id ... W-1, normalized [0,1]
+        // timestamps[i] = *((int64_t *)(row));
+        // azimuths[i] = *((uint16_t *)(row + 8)) * 2.0f * float(M_PI) / double(encoder_size);
+        // for (int j = 0; j < polarW; ++j) {
+        //     polar[i][j] = float(row[11 + min_id + j]) / 255.0f;
+        // }
+
+        int64_t ts = 0;
+        for (int j = 0; j < 8; ++j) {
+            ts |= static_cast<int64_t>(row[j]) << (j * 8);
+        }
+        timestamps[i] = static_cast<int64_t>(ts);
+
+        uint16_t az_raw = static_cast<uint16_t>(row[8]) |
+                            (static_cast<uint16_t>(row[9]) << 8);
+        double angle = static_cast<float>(az_raw) / encoder_size * 2.0f * static_cast<float>(M_PI);
+        azimuths[i] = angle;
+
         for (int j = 0; j < polarW; ++j) {
-            polar[i][j] = float(row[11 + min_id + j]) / 255.0f; 
+            float value = static_cast<float>(row[j + 11]) / 255.0f;
+            polar[i][j] = value;
         }
 
     }
+
+    polar.index_put_({Slice(), Slice(0, min_id)}, torch::zeros({H, min_id}, torch::TensorOptions().dtype(torch::kFloat64)));
 
     RadarData radar_data;
     radar_data.timestamps = timestamps;
