@@ -390,7 +390,7 @@ std::pair<torch::Tensor, torch::Tensor> GPStateEstimator::costFunctionAndJacobia
         residual = interp_sparse * temp_even_img_sparse_;
 
         jacobian = torch::matmul(
-            aligned_odd_coeff_sparse.view({-1, 1, 1}),
+            aligned_odd_coeff_sparse.view({-1, 1, 1}).to(torch::kFloat64),
             d_shift_d_state.index({doppler_az_ids_sparse_, Slice(), Slice()})
         ) * temp_even_img_sparse_.unsqueeze(-1).unsqueeze(-1);
         
@@ -971,13 +971,13 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         // cv::waitKey(0);
         // cv::destroyWindow("local_map_blurred_cv");
         
-    auto result = solve(state_init_, 250, 1e-6, 1e-5, true);
+    auto result = solve(state_init_, 250, 1e-6, 1e-5);
 
-    auto local_map_cpu = local_map_.detach().cpu().to(torch::kFloat32);
-    auto local_map_cv = tensorToMat(local_map_cpu);
-    cv::resize(local_map_cv, local_map_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
-    cv::imshow("local_map_cv", local_map_cv);
-    cv::waitKey(1);
+    // auto local_map_cpu = local_map_.detach().cpu().to(torch::kFloat32);
+    // auto local_map_cv = tensorToMat(local_map_cpu);
+    // cv::resize(local_map_cv, local_map_cv, cv::Size(), 0.3, 0.3, cv::INTER_LINEAR);
+    // cv::imshow("local_map_cv", local_map_cv);
+    // cv::waitKey(1);
         
     if (std::dynamic_pointer_cast<ConstVelConstW>(motion_model_)) {
         if (step_counter_ > 0) {

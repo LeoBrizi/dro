@@ -155,12 +155,10 @@ int main(int argc, char** argv) {
     fs::path seq_output_path = fs::path("output") / seq_id;
     fs::create_directories(seq_output_path);
     fs::path odom_output_path = seq_output_path / "odometry_result" / (seq_id + ".txt");
-    fs::path odom_output_w_path = seq_output_path / "odometry_result" / (seq_id + "_in_word_frame.txt");
     fs::create_directories(odom_output_path.parent_path());
-    fs::create_directories(odom_output_w_path.parent_path());
 
     std::ofstream odom_output(odom_output_path);
-    std::ofstream odom_output_w(odom_output_w_path);
+    std::ofstream x_y_odom_output(seq_output_path / "x_y_odometry.txt");
 
     // Before the frame loop:
     double time_sum = 0.0;
@@ -390,8 +388,9 @@ int main(int argc, char** argv) {
         if ( pos.has_value() && rot.has_value()) {
             auto current_pos = pos.value();
             auto current_rot = rot.value();
-            Eigen::MatrixXd current_pos_eig = Eigen::Map<Eigen::MatrixXd>(current_pos.squeeze().to(torch::kCPU).data_ptr<double>(), current_pos.size(0), current_pos.size(1));
-            Eigen::VectorXd current_rot_eig = Eigen::Map<Eigen::VectorXd>(current_rot.squeeze().to(torch::kCPU).data_ptr<double>(), current_rot.size(0));
+
+            // Eigen::MatrixXd current_pos_eig = Eigen::Map<Eigen::MatrixXd>(current_pos.squeeze().to(torch::kCPU).data_ptr<double>(), current_pos.size(0), current_pos.size(1));
+            // Eigen::VectorXd current_rot_eig = Eigen::Map<Eigen::VectorXd>(current_rot.squeeze().to(torch::kCPU).data_ptr<double>(), current_rot.size(0));
 
             double radar_timestamp_sec = radar_data.timestamp;
             double min_diff = std::numeric_limits<double>::max();
@@ -406,14 +405,16 @@ int main(int argc, char** argv) {
 
             // Create transformation matrix
             Eigen::Matrix4d trans_mat = Eigen::Matrix4d::Identity();
-            double cos_theta = std::cos(current_rot_eig[mid_id]);
-            double sin_theta = std::sin(current_rot_eig[mid_id]);
+            double cos_theta = std::cos(current_rot[mid_id].item<double>());
+            double sin_theta = std::sin(current_rot[mid_id].item<double>());
             trans_mat(0, 0) = cos_theta;
             trans_mat(0, 1) = -sin_theta;
             trans_mat(1, 0) = sin_theta;
             trans_mat(1, 1) = cos_theta;
-            trans_mat(0, 3) = current_pos_eig(mid_id, 0);
-            trans_mat(1, 3) = current_pos_eig(mid_id, 1);
+            trans_mat(0, 3) = current_pos[mid_id][0].item<double>();
+            trans_mat(1, 3) = current_pos[mid_id][1].item<double>();
+
+            x_y_odom_output << trans_mat(0, 3) << " " << trans_mat(1, 3) << std::endl;
 
             Eigen::Matrix4d trans_mat_inv = trans_mat.inverse();
 
@@ -425,15 +426,6 @@ int main(int argc, char** argv) {
                 }
             }
             odom_output << std::endl;
-
-            odom_output_w << static_cast<int64_t>(radar_data.timestamps[mid_id].item<double>()) << " ";
-            for (int r = 0; r < 3; ++r) {
-                for (int c = 0; c < 4; ++c) {
-                    odom_output_w << trans_mat(r, c);
-                    if (!(r == 2 && c == 3)) odom_output_w << " ";
-                }
-            }
-            odom_output_w << std::endl;
         }
 
 
@@ -448,7 +440,7 @@ int main(int argc, char** argv) {
     }
 
     odom_output.close();
-    odom_output_w.close();
+    x_y_odom_output.close();
 
     return 0;
 }
