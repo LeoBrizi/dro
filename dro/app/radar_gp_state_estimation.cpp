@@ -102,11 +102,16 @@ int main(int argc, char** argv) {
             gyro_raw.col(1) = imu_data.col(2);
             gyro_raw.col(2) = imu_data.col(1);
             // Transform to radar frame
-            fs::path calib_path = data_path / "calib";
-            auto T_applanix_lidar = utils::loadIsometry3dFromFile(calib_path / "T_applanix_lidar.txt");
-            auto T_radar_lidar = utils::loadIsometry3dFromFile(calib_path / "T_radar_lidar.txt");
-            auto T_applanix_radar = T_applanix_lidar * T_radar_lidar.inverse();
-            auto imu_gyro = (gyro_raw * T_applanix_radar.linear());
+            // fs::path calib_path = data_path / "calib";
+            // // I need to change the path 
+            // auto T_applanix_lidar = utils::loadIsometry3dFromFile(calib_path / "T_applanix_lidar.txt");
+            // auto T_radar_lidar = utils::loadIsometry3dFromFile(calib_path / "T_radar_lidar.txt");
+            // auto T_applanix_radar = T_applanix_lidar * T_radar_lidar.inverse();
+
+            // then I will read it directly from a file that has T_imu_radar
+            auto T_imu_radar = utils::loadIsometry3dFromFile(data_path / "T_imu_radar.txt"); // Sam: could be the inverse here
+
+            auto imu_gyro = (gyro_raw * T_imu_radar.linear());
             imu_yaw.resize(imu_gyro.rows());
             for (int i = 0; i < imu_gyro.rows(); ++i) {
                 imu_yaw[i] = -imu_gyro(i, 2);

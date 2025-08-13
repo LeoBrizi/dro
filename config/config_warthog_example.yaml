@@ -1,0 +1,59 @@
+data:
+  type: 'warthog' # 'boreas' or 'warthog' 
+  multi_sequence: false  # If true, the data path contains multiple sequences like data_path/{boereas-xxxx-xx-xx-xx-xx; boreas-yyyy-yy-yy-yy-yy; ...}
+  data_path: '/home/samqiao/ASRL/radar_sandbox/temp/grassy_t2'
+  #multi_sequence: false  # If false, the path should point to a single sequence like
+  #data_path: '/home/ced/Documents/data/warthog/grassy_t2_0'
+                        
+
+estimation:
+  doppler_cost: false
+  direct_cost: true
+  motion_model: 'const_body_vel_gyro' #'const_vel_const_w' #, const_acc_const_w
+  estimate_gyro_bias: true # was true
+  max_acceleration: 2.0 # m/s^2 This is used to detect failure modes due to too many outliers number 6.0 comes for the max performance of a car that is 0-100 in approx 3s (high performance car)
+  optimisation_first_step: 0.02
+  vy_bias_prior: 0.0
+  estimate_doppler_vy_bias: false
+  start_idx: 1
+  use_gyro: true
+  T_axle_radar: [[1.000, 0.000, 0.000, 0.025],
+                [0.000, -1.000 , 0.000, -0.002],
+                [0.000 ,0.000, -1.000 , 1.032],
+                [0.000 , 0.000 ,0.000, 1.000]]
+  ang_vel_bias: 0.0
+gp:
+  lengthscale_az: 2.0
+  lengthscale_range: 4.0
+  sz: 0.6
+
+radar:
+  ft: 76.04E9
+  meas_freq: 1600.0
+  del_f: 893.0E6
+  beta_corr_fact: 0.944
+  doppler_enabled: false
+  chirp_up: true # Ignored if doppler_enabled is true (the true/false might be inverted)
+  resolution: 0.040308
+  range_offset: 0.00
+
+imu:
+  min_time_bias_init: 2.0
+  type: 'applanix'
+
+doppler:
+  min_range: 4.0
+  max_range: 200.0
+
+direct:
+  min_range: 4.0
+  max_range: 68.0  #30.0
+  max_local_map_range: 100.0 #100.0
+  local_map_res: 0.05 #0.1
+  local_map_update_alpha: 0.5 # The local map is updated as (1-alpha)*prev_map + alpha*current_scan
+
+log:
+  verbose: true
+  display: true
+  save_images: false
+  # dump_local_map: true

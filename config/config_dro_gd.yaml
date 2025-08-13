@@ -1,6 +1,6 @@
 data:
   multi_sequence: true  # If true, the data path contains multiple sequences like data_path/{boereas-xxxx-xx-xx-xx-xx; boreas-yyyy-yy-yy-yy-yy; ...}
-  data_path: '/home/leo/dataset/new_radar_doppler/boreas-2024-01-23-11-45'
+  data_path: '/home/samqiao/ASRL/fomo-public-sdk/boreas_dataset/boreas-2020-11-26-13-58'
   #multi_sequence: false  # If false, the path should point to a single sequence like
   #data_path: '/home/ced/Documents/data/boreas/doppler/rss/test/boreas-2020-12-01-13-26'
                         
