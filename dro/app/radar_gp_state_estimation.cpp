@@ -40,6 +40,8 @@ int main(int argc, char** argv) {
     std::string motion_model = "";
     if (use_gyro) {
         motion_model = "const_body_vel_gyro";
+        // can I have a nice little message saying I am using this motion model
+        std::cout << "Sam: Using motion model and use_gyro is true in the config " << motion_model << std::endl;
     } else if (config["estimation"]["direct_cost"].as<bool>()){
         motion_model = "const_vel_const_w";
         estimate_ang_vel = true;
@@ -56,7 +58,7 @@ int main(int argc, char** argv) {
     float vy_bias = 0.0;
     bool estimate_vy_bias = false;
     Eigen::Matrix4d T_axle_radar;
-    if (doppler_radar) {
+    if (doppler_radar) { // this is false in my case
         estimate_vy_bias = config["estimation"]["estimate_doppler_vy_bias"].as<bool>();
         if (estimate_vy_bias) {
             const auto T_axle_radar_vec = config["estimation"]["T_axle_radar"].as<std::vector<std::vector<double>>>();
@@ -78,6 +80,8 @@ int main(int argc, char** argv) {
     auto state_estimator = GPStateEstimator(config, res);
 
     torch::Device device = state_estimator.getDevice();
+    // print which device I am running it on here
+    std::cout << "Sam: Running on device: " << device << std::endl;
 
     float gyro_bias = 0.0;
     int gyro_bias_counter = 0;
@@ -98,20 +102,16 @@ int main(int argc, char** argv) {
             imu_time.assign(imu_data.col(0).data(), imu_data.col(0).data() + imu_data.rows());
             // Stack columns 3,2,1 into a Nx3 matrix
             Eigen::MatrixXd gyro_raw(imu_data.rows(), 3);
-            gyro_raw.col(0) = imu_data.col(3);
-            gyro_raw.col(1) = imu_data.col(2);
-            gyro_raw.col(2) = imu_data.col(1);
+            gyro_raw.col(0) = imu_data.col(3); //wx
+            gyro_raw.col(1) = imu_data.col(2); //wy
+            gyro_raw.col(2) = imu_data.col(1); //wz
             // Transform to radar frame
-            // fs::path calib_path = data_path / "calib";
-            // // I need to change the path 
-            // auto T_applanix_lidar = utils::loadIsometry3dFromFile(calib_path / "T_applanix_lidar.txt");
-            // auto T_radar_lidar = utils::loadIsometry3dFromFile(calib_path / "T_radar_lidar.txt");
-            // auto T_applanix_radar = T_applanix_lidar * T_radar_lidar.inverse();
+            fs::path calib_path = data_path / "calib";
+            auto T_applanix_lidar = utils::loadIsometry3dFromFile(calib_path / "T_applanix_lidar.txt");
+            auto T_radar_lidar = utils::loadIsometry3dFromFile(calib_path / "T_radar_lidar.txt");
+            auto T_applanix_radar = T_applanix_lidar * T_radar_lidar.inverse();
 
-            // then I will read it directly from a file that has T_imu_radar
-            auto T_imu_radar = utils::loadIsometry3dFromFile(data_path / "T_imu_radar.txt"); // Sam: could be the inverse here
-
-            auto imu_gyro = (gyro_raw * T_imu_radar.linear());
+            auto imu_gyro = (gyro_raw * T_applanix_radar.linear());
             imu_yaw.resize(imu_gyro.rows());
             for (int i = 0; i < imu_gyro.rows(); ++i) {
                 imu_yaw[i] = -imu_gyro(i, 2);
@@ -126,6 +126,42 @@ int main(int argc, char** argv) {
                 imu_time[i] = imu_data(i, 0) * 1e-9;
                 imu_yaw[i]  = imu_data(i, 9);
             }
+        }
+        else if(imu_type == "ouster"){ // for my use
+            imu_path = data_path / "ouster_imu.csv";
+            imu_data = utils::loadCsv(imu_path.string(), ',', 1);
+            imu_time.assign(imu_data.col(0).data(), imu_data.col(0).data() + imu_data.rows());
+            // lets print out a few imu timestamps
+            std::cout << "IMU Time values (first 5): ";
+            for (int i = 0; i < 5 && i < imu_time.size(); ++i) {
+                std::cout << imu_time[i] << " ";
+            }
+            std::cout << std::endl;
+
+            // Stack columns 3,2,1 into a Nx3 matrix
+            Eigen::MatrixXd gyro_raw(imu_data.rows(), 3);
+            gyro_raw.col(0) = imu_data.col(3); //wx
+            gyro_raw.col(1) = imu_data.col(2); //wy
+            gyro_raw.col(2) = imu_data.col(1); //wz
+            // Transform to radar frame
+            // then I will read it directly from a file that has T_imu_radar
+            auto T_imu_radar = utils::loadIsometry3dFromFile(data_path / "T_imu_radar.txt"); // Sam: could be the inverse here
+
+            // can I print out this transform
+            std::cout << "Sam: T_imu_radar: " << T_imu_radar.matrix() << std::endl;
+
+            auto imu_gyro = (gyro_raw * T_imu_radar.linear());
+            
+            imu_yaw.resize(imu_gyro.rows());
+            for (int i = 0; i < imu_gyro.rows(); ++i) {
+                imu_yaw[i] = imu_gyro(i, 2);
+            }
+            // you know what I can even print out the yaw value lets say the first couple of them to double check
+            std::cout << "IMU Yaw values (first 5): ";
+            for (int i = 0; i < 5 && i < imu_yaw.size(); ++i) {
+                std::cout  << imu_yaw[i] << " ";
+            }
+            std::cout << std::endl;
         }
         else {
             std::cerr << "Unknown IMU type: " << imu_type << std::endl;
@@ -194,6 +230,9 @@ int main(int argc, char** argv) {
 
     int end_id = static_cast<int>(radar_frames.size());
 
+    // temporarily make end_id = 3
+    // end_id = 3;
+
     for (int i = start_idx; i < end_id; ++i) {
         auto t_loop_start = std::chrono::steady_clock::now();
 
@@ -203,7 +242,7 @@ int main(int argc, char** argv) {
 
         // Load the radar frame
         int min_id = static_cast<int>(std::round(2.5f / res));
-        auto radar_data = utils::loadRadarData(radar_frames[i].string(), 5600, min_id);
+        auto radar_data = utils::loadRadarData(radar_frames[i].string(), 16000, min_id); // 16000 is the encoder size
         std::cerr << "PROCESSING THE RADAR: " << radar_frames[i].string() << std::endl;
 
         // Update gyro bias if enabled
@@ -232,6 +271,20 @@ int main(int argc, char** argv) {
 
         // Prepare polar image, accounting for offset
         auto polar_img = radar_data.polar; // torch::Tensor
+
+        // I will print the first row of the polar image
+        // std::cout << "First row of polar image: " << polar_img.index({0}) << std::endl;
+
+        // can I check the shape of polar_img
+        // std::cout << "Polar image shape: " << polar_img.sizes() << std::endl;
+        // // check timestamp here as well pls and thanks
+        // std::cout << "Radar timestamp " << i << ": " << radar_data.timestamp << std::endl;
+
+        // // then check first 5 timestamps
+        // for (int i = 0; i < 5; ++i) {
+        //     std::cout << "Radar timestamp " << i << ": " << radar_data.timestamps[i].item<double>() << std::endl;
+        // }
+
         double offset = config["radar"]["range_offset"].as<double>() 
                         / res;
         if (offset > 0) {
@@ -245,7 +298,7 @@ int main(int argc, char** argv) {
             polar_img = polar_img.index({torch::indexing::Slice(), torch::indexing::Slice(ofs, torch::indexing::None)});
         }
 
-        // Run odometry
+        // Run odometry so this is the odometry step call I need to check all the input before that
         auto state = state_estimator.odometryStep(
             polar_img,
             radar_data.azimuths,

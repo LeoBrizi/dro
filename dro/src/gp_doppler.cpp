@@ -749,7 +749,7 @@ torch::Tensor GPStateEstimator::odometryStep(const torch::Tensor& polar_image, c
         double t_start = timestamps[0].item<double>();
         double t_end = timestamps[timestamps.size(0) - 1].item<double>();
         last_scan_time = t_start - (t_end - t_start);
-        max_diff_vel_ = max_acc_ * (t_end - t_start) * 1e-5;
+        max_diff_vel_ = max_acc_ * (t_end - t_start) * 1e-5; // Sam suspicious 
     } 
     else 
     {
